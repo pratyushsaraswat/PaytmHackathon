@@ -45,6 +45,7 @@ def reporter_id(ip):
 
 def init():
     with closing(_conn()) as c:
+        c.execute("PRAGMA journal_mode=WAL")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS reports(
             id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, reason TEXT,

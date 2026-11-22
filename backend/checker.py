@@ -2,14 +2,13 @@
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import ai
 
 log = logging.getLogger("checker")
 import db
 import trust
-from logging_config import ctx_submit
+from parallel import run_parallel
 from serp import serp
 
 UPI_RE = re.compile(r"^[a-zA-Z0-9._\-]{2,}@[a-zA-Z]{2,}$")
@@ -31,16 +30,6 @@ def _norm_url(u):
     return u if u.startswith("http") else "https://" + u
 
 
-def _timed(name, fn):
-    def run():
-        t = time.perf_counter()
-        try:
-            return fn()
-        finally:
-            log.debug("job=%s finished in %dms", name, (time.perf_counter() - t) * 1000)
-    return run
-
-
 def check(query):
     t_start = time.perf_counter()
     q = query.strip()
@@ -51,7 +40,6 @@ def check(query):
     jobs = {}
     if kind == "upi":
         jobs["s1"] = lambda: serp.search(f"\"{q}\" scam OR fraud OR complaint")
-        jobs["s2"] = lambda: serp.search(f"{q} upi reviews")
         jobs["n"] = lambda: serp.news(f"{q} scam")
     elif kind == "url":
         url = _norm_url(q)
@@ -75,16 +63,7 @@ def check(query):
         jobs["n"] = lambda: serp.news(f"{q} fraud")
         jobs["m"] = lambda: serp.maps(q)
 
-    res, errors = {}, []
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        futs = {k: ctx_submit(ex, _timed(k, fn)) for k, fn in jobs.items()}
-        for k, f in futs.items():
-            try:
-                res[k] = f.result()
-            except Exception as e:  # one failed call must not kill the check
-                errors.append(f"{k}: {e}")
-                log.warning("job=%s FAILED: %s", k, e)
-                res[k] = [] if k != "x" else ""
+    res, errors = run_parallel(jobs, defaults={"x": ""})
 
     seen, search_results = set(), []
     for r in (res.get("s1") or []) + (res.get("s2") or []):  # same page can match both queries

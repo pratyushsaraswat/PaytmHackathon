@@ -3,13 +3,12 @@ import logging
 import time
 import re
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import ai
 import db
 import trust
-from logging_config import ctx_submit
+from parallel import run_parallel
 from serp import serp
 
 log = logging.getLogger("copilot")
@@ -21,7 +20,7 @@ THEMES = {
                   "Use sturdy gift boxes and advertise 'spill-proof packing' - offer a ₹20 gift-box add-on"),
     "price":     (r"expensive|overpriced|costly|too much", "pricing",
                   "Launch value combos or a 'pay with Paytm, get 5% off' deal"),
-    "quality":   (r"stale|taste|not fresh|bad food|old", "freshness/quality",
+    "quality":   (r"stale|not fresh|bad taste|taste(?:s|d)? (?:bad|awful|terrible)|no taste|bad food|expired", "freshness/quality",
                   "Put 'made fresh today' with the date on your counter - customers notice"),
     "service":   (r"rude|staff|behaviou?r|ignored", "staff behaviour",
                   "Train one friendly 'greeter' for peak hours - it is the cheapest win"),
@@ -66,46 +65,55 @@ def _trend_change(vals):
     return round((recent - before) / before * 100) if before else 0
 
 
+def _norm_name(x):
+    return re.sub(r"[^a-z0-9 ]", " ", x.lower())
+
+
+def _match_own(business, places):
+    """Pick the Maps result that really is this business, or None.
+    Needs ALL significant words of the name present in the title, or a very similar title.
+    (Old rule matched only the first word, so 'Sharma Sweets' matched 'Sharma Dairy & Fast Food'.)"""
+    from difflib import SequenceMatcher
+    want = _norm_name(business)
+    words = [w for w in want.split() if len(w) > 2]
+    best, best_score = None, 0.0
+    for p in places:
+        have = _norm_name(p["title"])
+        score = SequenceMatcher(None, want, have).ratio()
+        if (words and all(w in have.split() or w in have for w in words)) or score >= 0.8:
+            if score > best_score:
+                best, best_score = p, score
+    return best
+
+
 def run(business, category, location):
     t_start = time.perf_counter()
     area = f"{category} near {location}"
     errors = []
 
-    # ---- stage 1: maps for competitors + own shop, trends, news (parallel)
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        f_comp = ctx_submit(ex, serp.maps, area)
-        f_own = ctx_submit(ex, serp.maps, f"{business} {location}")
-        f_tr = ctx_submit(ex, serp.trends, category)
-        f_news = ctx_submit(ex, serp.news, f"{category} market demand {location}")
-        f_scam = ctx_submit(ex, serp.search, f"{business} {location} scam OR fraud OR complaint")
+    # ---- stage 1 (parallel, hard deadline): competitors, own shop, demand trend, news, scam search
+    r1, e1 = run_parallel({
+        "comp": lambda: serp.maps(area),
+        "own": lambda: serp.maps(f"{business} {location}"),
+        "trend": lambda: serp.trends(category),
+        "news": lambda: serp.news(f"{category} market demand {location}"),
+        "scam": lambda: serp.search(f"{business} {location} scam OR fraud OR complaint"),
+    })
+    errors += e1
+    comps_raw, own_raw, trend, news, scam_res = r1["comp"], r1["own"], r1["trend"], r1["news"], r1["scam"]
 
-        def get(f, default):
-            try:
-                return f.result()
-            except Exception as e:
-                errors.append(str(e))
-                return default
-
-        comps_raw, own_raw = get(f_comp, []), get(f_own, [])
-        trend, news, scam_res = get(f_tr, []), get(f_news, []), get(f_scam, [])
-
-    own = next((p for p in own_raw if business.lower().split()[0] in p["title"].lower()), None)
+    own = _match_own(business, own_raw)
+    log.info("own shop match: asked=%r matched=%r (of %d maps results)", business, own["title"] if own else None, len(own_raw))
     comps = [c for c in comps_raw if not own or c["title"] != own["title"]][:6]
     comps = [c for c in comps if c.get("rating")]
 
     # ---- stage 2: reviews (low-rated first) for top competitors + own shop
     targets = sorted(comps, key=lambda c: -c["reviews"])[:3]
-    rev = {}
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        futs = {c["title"]: ctx_submit(ex, serp.reviews, c["data_id"], c["title"]) for c in targets if c.get("data_id")}
-        if own and own.get("data_id"):
-            futs["__own__"] = ctx_submit(ex, serp.reviews, own["data_id"], own["title"])
-        for k, f in futs.items():
-            try:
-                rev[k] = f.result()
-            except Exception as e:
-                errors.append(str(e))
-                rev[k] = []
+    review_jobs = {c["title"]: (lambda c=c: serp.reviews(c["data_id"], c["title"])) for c in targets if c.get("data_id")}
+    if own and own.get("data_id"):
+        review_jobs["__own__"] = lambda: serp.reviews(own["data_id"], own["title"])
+    rev, e2 = run_parallel(review_jobs)
+    errors += e2
 
     comp_reviews = [r for k, v in rev.items() if k != "__own__" for r in v]
     comp_themes = themes_in(comp_reviews)
@@ -113,7 +121,16 @@ def run(business, category, location):
     n_checked = len([k for k in rev if k != "__own__"])
 
     # ---- Trust Score for the merchant (same engine the customer-side checker uses)
+    raw_n = len(scam_res)
+    scam_res = [r for r in scam_res if trust.relevant(r, business, "name")]
+    log.info("merchant scam search: %d results, %d mention %r (others ignored)", raw_n, len(scam_res), business)
     t = trust.compute(scam_res, [], [], own)
+    if not own and not scam_res and not t["complaints"]:
+        # nothing about THIS business exists online: say so instead of showing a score that looks like a verdict
+        t["headline"] = "Not found online yet"
+        t["verdict"] = "caution"
+        t["reasons"] = [{"type": "info", "text": f"No Google Maps listing or reports found for '{business}'. "
+                         "Check the spelling, or claim your Google Business profile so customers can verify you."}]
     avg_rating = round(sum(c["rating"] for c in comps) / len(comps), 1) if comps else None
 
     # ---- build tips (rule-based, always works)

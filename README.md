@@ -230,3 +230,20 @@ Never share your OTP or UPI PIN with anyone. Genuine services never ask for them
 ---
 
 Built for the Paytm hackathon · Powered by [SerpApi](https://serpapi.com)
+
+
+## Performance & credit savings
+
+| What | Effect |
+|---|---|
+| Slim cache (only used fields stored) | cache entry ~48 KB -> ~2 KB; file loads and saves fast |
+| Atomic, debounced cache save | one write per request, never a corrupt file |
+| Case/space-insensitive cache keys | "KBC  Scam" and "kbc scam" share one credit |
+| Per-engine TTL | news 6 h, extract 1 h, everything else 24 h |
+| Single-flight | identical simultaneous requests share one SerpApi call |
+| Pooled HTTP session + retry | reuses TLS; retries network errors, 429 and 5xx (not 4xx) |
+| Hard deadline (`JOB_TIMEOUT`, default 25 s) | one slow Google call cannot stall the request |
+| Dropped redundant UPI "reviews" search | 1 credit saved per UPI check |
+| gzip responses, SQLite WAL | smaller payloads, readers do not block writers |
+
+`/api/health` now also shows `serp_cache_hits` (credits saved this run).

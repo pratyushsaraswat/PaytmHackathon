@@ -16,6 +16,7 @@ import time
 import uuid
 
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
@@ -29,6 +30,7 @@ from serp import serp  # noqa: E402
 log = logging.getLogger("api")
 
 app = FastAPI(title="Paytm Trust & Growth")
+app.add_middleware(GZipMiddleware, minimum_size=1000)   # copilot JSON shrinks ~5x on the wire
 db.init()
 
 
@@ -97,6 +99,7 @@ def health():
         "llm": ai.model_info(),
         "serpapi_calls_this_run": serp.calls,
         "serp_cache_entries": len(serp.cache),
+        "serp_cache_hits": serp.hits,
         "demo_repeat": db.DEMO_REPEAT,
     }
     log.debug("api /health ok %s", {k: info[k] for k in ("mode", "serpapi_calls_this_run", "serp_cache_entries")})

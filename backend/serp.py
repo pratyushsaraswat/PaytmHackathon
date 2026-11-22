@@ -4,6 +4,7 @@
 - Mock mode  : no key (or MOCK=1) -> realistic sample data so the demo always works
 - Every live call is cached on disk for 24h so repeated demos don't burn credits.
 """
+import atexit
 import hashlib
 import json
 import logging
@@ -14,12 +15,16 @@ import threading
 import time
 
 import requests
+from requests.adapters import HTTPAdapter
 
 log = logging.getLogger("serp")
 
 BASE = "https://serpapi.com/search.json"
 CACHE_FILE = os.path.join(os.path.dirname(__file__), ".cache.json")
 CACHE_TTL = 24 * 3600
+TTL_BY_ENGINE = {"google_news": 6 * 3600, "extract": 3600}   # news changes fast; pages change; the rest is stable
+MAX_CACHE_ENTRIES = 500
+RETRY_STATUS = {429, 500, 502, 503, 504}
 
 SCAM_HINTS = ["lottery", "kbc", "prize", "winner", "reward", "refund", "kyc", "freegift",
               "free-gift", "quickcash", "fastloan", "loan-fast", "fake", "claim", "jackpot",
@@ -84,59 +89,182 @@ def _response_preview(engine, data, max_items=3):
     return [{"keys": list(data.keys())[:8]}]
 
 
+def _slim(engine, d):
+    """Keep ONLY the fields the app uses. Raw SerpApi responses are 50-150 KB each (AI-overview tokens, thumbnails,
+    review images...). Slim copies are ~1-5 KB, so the cache file stays tiny and loads/saves fast."""
+    if not isinstance(d, dict):
+        return d
+    out = {}
+    if d.get("error"):
+        out["error"] = d["error"]
+    if engine == "google":
+        out["organic_results"] = [{k: x.get(k, "") for k in ("title", "link", "snippet", "displayed_link")}
+                                  for x in (d.get("organic_results") or [])]
+    elif engine == "google_news":
+        out["news_results"] = [{"title": x.get("title", ""), "link": x.get("link", ""), "date": x.get("date", ""),
+                                "source": {"name": (x.get("source") or {}).get("name", "") if isinstance(x.get("source"), dict) else str(x.get("source") or "")}}
+                               for x in (d.get("news_results") or [])]
+    elif engine == "google_maps":
+        keep = ("title", "rating", "reviews", "address", "open_state", "hours", "data_id", "type")
+        if d.get("local_results"):
+            out["local_results"] = [{k: x.get(k) for k in keep} for x in d["local_results"]]
+        if d.get("place_results"):
+            out["place_results"] = {k: d["place_results"].get(k) for k in keep}
+    elif engine == "google_maps_reviews":
+        out["reviews"] = [{"rating": x.get("rating"),
+                           "snippet": (x.get("snippet") or (x.get("extracted_snippet") or {}).get("original") or "")[:400]}
+                          for x in (d.get("reviews") or [])[:20]]
+    elif engine == "google_trends":
+        tl = (d.get("interest_over_time") or {}).get("timeline_data") or []
+        out["interest_over_time"] = {"timeline_data": [
+            {"date": p.get("date"), "values": [{"extracted_value": (p.get("values") or [{}])[0].get("extracted_value")}]} for p in tl]}
+    elif engine == "extract":
+        md = d.get("markdown") or d.get("markdown_content") or ""
+        if md:
+            out["markdown"] = md[:6000]
+        else:
+            out["page_information"] = {"title": (d.get("page_information") or {}).get("title", "")}
+            out["headings"] = [{"text": (h.get("text", "") if isinstance(h, dict) else str(h))} for h in (d.get("headings") or [])[:20]]
+    else:
+        return d
+    return out
+
+
 class Serp:
     def __init__(self):
         self.key = os.getenv("SERPAPI_KEY", "").strip()
         self.mock = (not self.key) or os.getenv("MOCK", "") == "1"
-        self.calls = 0
+        self.calls = 0          # real HTTP calls (= credits spent) this run
+        self.hits = 0           # served from cache (credits saved)
         self._lock = threading.Lock()
-        try:
-            with open(CACHE_FILE) as f:
-                self.cache = json.load(f)
-        except Exception:
-            self.cache = {}
+        self._flight_lock = threading.Lock()
+        self._inflight = {}
+        self._save_timer = None
+        # one pooled session: keeps TLS connections to serpapi.com alive (saves ~100-300 ms per call)
+        self.http = requests.Session()
+        self.http.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=16))
+        self.cache = self._load_cache()
+        atexit.register(self._flush)
         log.info("serp mode=%s cache_entries=%d", "mock" if self.mock else "live", len(self.cache))
 
+    # ---------------------------------------------------------------- cache io
+    def _load_cache(self):
+        try:
+            with open(CACHE_FILE) as f:
+                raw = json.load(f)
+        except Exception:
+            return {}
+        now, out = time.time(), {}
+        for ck, e in raw.items():
+            try:
+                eng = e.get("e") or (e["d"].get("search_parameters") or {}).get("engine", "")   # old entries: engine inside raw body
+                if now - e["t"] < TTL_BY_ENGINE.get(eng, CACHE_TTL):
+                    out[ck] = {"t": e["t"], "e": eng, "d": _slim(eng, e["d"])}                   # shrink old fat entries too
+            except Exception:
+                continue
+        return dict(sorted(out.items(), key=lambda kv: kv[1]["t"])[-MAX_CACHE_ENTRIES:])
+
+    def _schedule_save(self):
+        """Debounced: many calls in one request cause ONE file write, not one per call."""
+        with self._lock:
+            if self._save_timer is None:
+                self._save_timer = threading.Timer(1.5, self._flush)
+                self._save_timer.daemon = True
+                self._save_timer.start()
+
+    def _flush(self):
+        with self._lock:
+            self._save_timer = None
+            if len(self.cache) > MAX_CACHE_ENTRIES:
+                keep = sorted(self.cache.items(), key=lambda kv: kv[1]["t"])[-MAX_CACHE_ENTRIES:]
+                self.cache = dict(keep)
+            snap = json.dumps(self.cache)
+        try:
+            tmp = CACHE_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                f.write(snap)
+            os.replace(tmp, CACHE_FILE)          # atomic: a crash can never leave a half-written cache
+        except Exception as e:
+            log.warning("cache save failed: %s", e)
+
+    @staticmethod
+    def _cache_key(params):
+        p = dict(params)
+        if isinstance(p.get("q"), str):
+            p["q"] = " ".join(p["q"].lower().split())      # "Sweet  Shop" and "sweet shop" are the same query
+        return hashlib.md5(json.dumps(p, sort_keys=True).encode()).hexdigest()
+
     # ------------------------------------------------------------------ core
+    def _cached(self, ck, engine, q):
+        hit = self.cache.get(ck)
+        if hit and time.time() - hit["t"] < TTL_BY_ENGINE.get(engine, CACHE_TTL):
+            self.hits += 1
+            log.info("serp data_source=cache engine=%s n=%d q=%r preview=%s", engine, _result_n(engine, hit["d"]), q,
+                     _response_preview(engine, hit["d"]))
+            return hit["d"]
+        return None
+
     def _get(self, **params):
         engine = params.get("engine", "?")
         q = _query_label(params)
-        ck = hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
-        hit = self.cache.get(ck)
-        if hit and time.time() - hit["t"] < CACHE_TTL:
-            n = _result_n(engine, hit["d"])
-            prev = _response_preview(engine, hit["d"])
-            log.info("serp data_source=cache engine=%s n=%d q=%r preview=%s", engine, n, q, prev)
-            return hit["d"]
-        params["api_key"] = self.key
+        ck = self._cache_key(params)
+        data = self._cached(ck, engine, q)
+        if data is not None:
+            return data
+        # single-flight: if the same call is already running (two users, same query) wait for it instead of paying twice
+        with self._flight_lock:
+            lk = self._inflight.setdefault(ck, threading.Lock())
+        with lk:
+            data = self._cached(ck, engine, q)
+            if data is not None:
+                return data
+            try:
+                return self._fetch(ck, engine, q, params)
+            finally:
+                with self._flight_lock:
+                    self._inflight.pop(ck, None)
+
+    def _fetch(self, ck, engine, q, params):
+        params = dict(params, api_key=self.key)
         t0 = time.perf_counter()
         log.info("serp data_source=http engine=%s q=%r", engine, q)
         log.info("serp curl: %s", _curl_line(params))
-        try:
-            r = requests.get(BASE, params=params, timeout=45)
-            r.raise_for_status()
-        except requests.RequestException as e:
-            body = getattr(getattr(e, "response", None), "text", "") or ""
-            log.error("serp http FAILED engine=%s q=%r after %dms err=%s body=%s", engine, q, (time.perf_counter() - t0) * 1000, e, body[:400])
-            raise
-        data = r.json()
-        if data.get("error"):
-            msg = str(data.get("error"))
+        r, last = None, None
+        for attempt in (1, 2, 3):                       # retry transient failures only (network, 429, 5xx)
+            try:
+                r = self.http.get(BASE, params=params, timeout=(5, 30))
+                if r.status_code in RETRY_STATUS and attempt < 3:
+                    log.warning("serp engine=%s got HTTP %d, retry %d", engine, r.status_code, attempt)
+                    time.sleep(0.4 * attempt)
+                    continue
+                r.raise_for_status()
+                break
+            except (requests.ConnectionError, requests.Timeout) as e:
+                last = e
+                if attempt < 3:
+                    log.warning("serp engine=%s network error (%s), retry %d", engine, type(e).__name__, attempt)
+                    time.sleep(0.4 * attempt)
+                    continue
+                log.error("serp http FAILED engine=%s q=%r after %dms err=%s", engine, q, (time.perf_counter() - t0) * 1000, e)
+                raise
+            except requests.RequestException as e:      # 4xx (bad key, no credits, bad params): do not retry
+                body = getattr(getattr(e, "response", None), "text", "") or ""
+                log.error("serp http FAILED engine=%s q=%r after %dms err=%s body=%s", engine, q, (time.perf_counter() - t0) * 1000, e, body[:400])
+                raise
+        raw = r.json()
+        if raw.get("error"):
+            msg = str(raw.get("error"))
             lvl = logging.INFO if "hasn't returned any results" in msg else logging.ERROR  # empty result is normal
             log.log(lvl, "serp api %s engine=%s msg=%s", "empty" if lvl == logging.INFO else "error", engine, msg)
-        n = _result_n(engine, data)
-        prev = _response_preview(engine, data)
-        log.info("serp response engine=%s n=%d ms=%d preview=%s", engine, n, (time.perf_counter() - t0) * 1000, prev)
+        log.info("serp response engine=%s n=%d ms=%d preview=%s", engine, _result_n(engine, raw),
+                 (time.perf_counter() - t0) * 1000, _response_preview(engine, raw))
         if log.isEnabledFor(logging.DEBUG):
-            log.debug("serp response_body=%s", json.dumps(data, default=str)[:8000])
+            log.debug("serp response_body=%s", json.dumps(raw, default=str)[:8000])
+        data = _slim(engine, raw)
         with self._lock:
             self.calls += 1
-            self.cache[ck] = {"t": time.time(), "d": data}
-            try:
-                with open(CACHE_FILE, "w") as f:
-                    json.dump(self.cache, f)
-            except Exception:
-                pass
+            self.cache[ck] = {"t": time.time(), "e": engine, "d": data}
+        self._schedule_save()
         return data
 
     def _mock_log(self, op, q, rows):
