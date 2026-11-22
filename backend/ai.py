@@ -4,6 +4,7 @@ Without that, rule-based summaries and tips are used (no external LLM calls).
 import json
 import logging
 import os
+import time
 
 import requests
 
@@ -53,9 +54,10 @@ def _ask(system, user, max_tokens=700):
         return None
     log.info("llm data_source=openai model=%s", OPENAI_MODEL)
     log.info("llm curl: %s", _openai_curl(OPENAI_MODEL, max_tokens, user[:120]))
-    log.info("llm request user_preview=%s", user[:500])
+    log.debug("llm request user_preview=%s", user[:500])  # may contain user input -> DEBUG only
     payload = {"model": OPENAI_MODEL, "max_tokens": max_tokens,
                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    t0 = time.perf_counter()
     try:
         r = requests.post(
             OPENAI_URL,
@@ -67,12 +69,12 @@ def _ask(system, user, max_tokens=700):
         body = r.json()
         text = body["choices"][0]["message"]["content"].strip()
         usage = body.get("usage") or {}
-        log.info("llm response chars=%d usage=%s text_preview=%s", len(text), usage, text[:400])
+        log.info("llm response ms=%d chars=%d usage=%s text_preview=%s", (time.perf_counter() - t0) * 1000, len(text), usage, text[:200])
         if log.isEnabledFor(logging.DEBUG):
             log.debug("llm response_full=%s", text)
         return text
     except Exception as e:
-        log.warning("llm openai failed (%s) -> rule-based text", e)
+        log.warning("llm openai failed after %dms (%s) -> rule-based text", (time.perf_counter() - t0) * 1000, e)
     return None
 
 

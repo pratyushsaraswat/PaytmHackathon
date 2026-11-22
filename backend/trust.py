@@ -34,6 +34,60 @@ def _credible(link, source=""):
     return any(c in s for c in CREDIBLE)
 
 
+def _ident(q, kind):
+    """The thing we are checking, normalised for substring matching."""
+    q = q.lower().strip()
+    if kind == "url":
+        q = re.sub(r"^https?://", "", q)
+        q = re.sub(r"^www\.", "", q).split("/")[0]
+    return q
+
+
+def relevant(r, q, kind):
+    """True only if a search/news result actually mentions what is being checked.
+    Stops generic 'Paytm scam awareness' pages from counting as complaints against an unrelated ID."""
+    if kind == "message":
+        return True
+    ident = _ident(q, kind)
+    text = f"{r.get('title','')} {r.get('snippet','')} {r.get('link','')}".lower()
+    if kind in ("upi", "url"):
+        keys = [ident]
+        local = ident.split("@")[0]
+        if "@" in ident and len(local) >= 5:
+            keys.append(local)
+        return any(k in text for k in keys)
+    words = [w for w in re.split(r"\W+", ident) if len(w) > 2]
+    return bool(words) and all(w in text for w in words)
+
+
+# Demo allowlist: official domains of well-known brands. A real system would use a maintained list.
+KNOWN_BRANDS = {"paytm.com", "phonepe.com", "google.com", "amazon.in", "amazon.com", "flipkart.com",
+                "sbi.co.in", "onlinesbi.sbi", "hdfcbank.com", "icicibank.com", "axisbank.com", "npci.org.in",
+                "rbi.org.in", "irctc.co.in", "gov.in"}
+
+
+def known_brand(url_or_domain):
+    """Exact domain or a true subdomain of a known brand (paytm.com.evil.in does NOT match)."""
+    host = _ident(url_or_domain, "url")
+    return next((d for d in KNOWN_BRANDS if host == d or host.endswith("." + d)), None)
+
+
+LOOKALIKE_TOKENS = ["paytm", "phonepe", "google", "amazon", "flipkart", "icici", "irctc", "hdfc", "npci", "sbi"]
+
+
+def lookalike(url_or_domain):
+    """Flag text if a known brand name appears in a domain that is NOT that brand's real domain."""
+    host = _ident(url_or_domain, "url")
+    if not host or known_brand(host):
+        return None
+    labels = re.split(r"[.\-_]", host)
+    for t in LOOKALIKE_TOKENS:
+        hit = (t in labels) if len(t) <= 4 else (t in host)
+        if hit:
+            return f"Domain ({host}) imitates '{t.title()}' but is not their official site"
+    return None
+
+
 def page_flags(text, url=""):
     """Scan page/message text -> list of red-flag strings."""
     flags = [msg for pat, msg in PAGE_FLAGS if re.search(pat, text, re.I)]

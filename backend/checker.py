@@ -1,6 +1,7 @@
 """Customer side: 'Pay Safely' - check a UPI ID / link / merchant name / offer message BEFORE paying."""
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import ai
@@ -8,6 +9,7 @@ import ai
 log = logging.getLogger("checker")
 import db
 import trust
+from logging_config import ctx_submit
 from serp import serp
 
 UPI_RE = re.compile(r"^[a-zA-Z0-9._\-]{2,}@[a-zA-Z]{2,}$")
@@ -16,7 +18,7 @@ URL_RE = re.compile(r"(https?://[^\s]+|(?:www\.)?[a-z0-9\-]+(?:\.[a-z0-9\-]+)*\.
 
 def detect(q):
     q = q.strip()
-    if UPI_RE.match(q):
+    if UPI_RE.match(q) or re.fullmatch(r"[^\s@]+@[^\s@]+", q):  # UPI handle or email-style ID
         return "upi"
     if " " not in q and URL_RE.fullmatch(q):
         return "url"
@@ -29,7 +31,18 @@ def _norm_url(u):
     return u if u.startswith("http") else "https://" + u
 
 
+def _timed(name, fn):
+    def run():
+        t = time.perf_counter()
+        try:
+            return fn()
+        finally:
+            log.debug("job=%s finished in %dms", name, (time.perf_counter() - t) * 1000)
+    return run
+
+
 def check(query):
+    t_start = time.perf_counter()
     q = query.strip()
     kind = detect(q)
     flags, maps_place, page_text = [], None, ""
@@ -64,12 +77,13 @@ def check(query):
 
     res, errors = {}, []
     with ThreadPoolExecutor(max_workers=6) as ex:
-        futs = {k: ex.submit(fn) for k, fn in jobs.items()}
+        futs = {k: ctx_submit(ex, _timed(k, fn)) for k, fn in jobs.items()}
         for k, f in futs.items():
             try:
                 res[k] = f.result()
             except Exception as e:  # one failed call must not kill the check
                 errors.append(f"{k}: {e}")
+                log.warning("job=%s FAILED: %s", k, e)
                 res[k] = [] if k != "x" else ""
 
     seen, search_results = set(), []
@@ -78,6 +92,11 @@ def check(query):
             seen.add(r["link"])
             search_results.append(r)
     news = res.get("n") or []
+    # keep only evidence that really mentions what we are checking (no generic scam-awareness pages)
+    n_raw = (len(search_results), len(news))
+    search_results = [r for r in search_results if trust.relevant(r, q, kind)]
+    news = [n for n in news if trust.relevant({"title": n["title"], "snippet": "", "link": n["link"]}, q, kind)]
+    dropped = (n_raw[0] - len(search_results), n_raw[1] - len(news))
     if kind == "name" and res.get("m"):
         maps_place = res["m"][0]
 
@@ -86,20 +105,30 @@ def check(query):
         page_text = (page_text + "\n" + extracted).strip()
         src_url = _norm_url(q) if kind == "url" else (URL_RE.search(q).group(0) if URL_RE.search(q) else "")
         flags = trust.page_flags(page_text, src_url if kind == "url" else "")
+        look = trust.lookalike(src_url) if src_url else None
+        if look:
+            flags.append(look)
 
     reports = db.count_reports(q)
     out = trust.compute(search_results, news, flags, maps_place, kind, user_reports=reports)
+    brand = trust.known_brand(q) if kind == "url" else None
+    if brand:  # official site of a well-known brand: never show it as risky
+        out["trust"], out["risk"] = max(out["trust"], 85), min(out["risk"], 15)
+        out["verdict"], out["headline"] = "safe", f"Official site of {brand}"
+        out["reasons"].insert(0, {"type": "good", "text": f"Domain belongs to a known brand ({brand}). Always check the spelling of the address."})
     out.update({"query": q, "kind": kind, "user_reports": reports, "mode": "mock" if serp.mock else "live",
                 "sources_used": sorted(k for k in res), "errors": errors})
     ai_text = ai.explain_check(q, out)
     out["summary"] = ai_text or _fallback_summary(out)
     log.info(
-        "check kind=%s trust=%s verdict=%s data: serp=%s search=%d news=%d "
-        "sqlite_reports=%d summary_from=%s errors=%d",
+        "check kind=%s trust=%s verdict=%s data: serp=%s jobs=%s search=%d news=%d "
+        "dropped_irrelevant=%s sqlite_reports=%d summary_from=%s errors=%d total_ms=%d",
         kind, out["trust"], out["verdict"], "mock" if serp.mock else "live",
-        len(search_results), len(news), reports,
-        "openai" if ai_text else "rule_based", len(errors),
+        sorted(res.keys()), len(search_results), len(news), dropped, reports,
+        "openai" if ai_text else "rule_based", len(errors), (time.perf_counter() - t_start) * 1000,
     )
+    if errors:
+        log.warning("check serp errors=%s", errors)
     return out
 
 

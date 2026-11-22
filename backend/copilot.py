@@ -1,5 +1,6 @@
 """Merchant side: 'Grow My Business' - Merchant Growth Copilot for Paytm for Business."""
 import logging
+import time
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +9,7 @@ from datetime import date
 import ai
 import db
 import trust
+from logging_config import ctx_submit
 from serp import serp
 
 log = logging.getLogger("copilot")
@@ -65,16 +67,17 @@ def _trend_change(vals):
 
 
 def run(business, category, location):
+    t_start = time.perf_counter()
     area = f"{category} near {location}"
     errors = []
 
     # ---- stage 1: maps for competitors + own shop, trends, news (parallel)
     with ThreadPoolExecutor(max_workers=5) as ex:
-        f_comp = ex.submit(serp.maps, area)
-        f_own = ex.submit(serp.maps, f"{business} {location}")
-        f_tr = ex.submit(serp.trends, category)
-        f_news = ex.submit(serp.news, f"{category} market demand {location}")
-        f_scam = ex.submit(serp.search, f"{business} {location} scam OR fraud OR complaint")
+        f_comp = ctx_submit(ex, serp.maps, area)
+        f_own = ctx_submit(ex, serp.maps, f"{business} {location}")
+        f_tr = ctx_submit(ex, serp.trends, category)
+        f_news = ctx_submit(ex, serp.news, f"{category} market demand {location}")
+        f_scam = ctx_submit(ex, serp.search, f"{business} {location} scam OR fraud OR complaint")
 
         def get(f, default):
             try:
@@ -94,9 +97,9 @@ def run(business, category, location):
     targets = sorted(comps, key=lambda c: -c["reviews"])[:3]
     rev = {}
     with ThreadPoolExecutor(max_workers=4) as ex:
-        futs = {c["title"]: ex.submit(serp.reviews, c["data_id"], c["title"]) for c in targets if c.get("data_id")}
+        futs = {c["title"]: ctx_submit(ex, serp.reviews, c["data_id"], c["title"]) for c in targets if c.get("data_id")}
         if own and own.get("data_id"):
-            futs["__own__"] = ex.submit(serp.reviews, own["data_id"], own["title"])
+            futs["__own__"] = ctx_submit(ex, serp.reviews, own["data_id"], own["title"])
         for k, f in futs.items():
             try:
                 rev[k] = f.result()
@@ -174,10 +177,14 @@ def run(business, category, location):
     plan.append("Keep a visible Paytm QR so customers see a verified payment identity")
 
     log.info(
-        "copilot serp=%s trust=%s competitors=%d tips=%d llm=%s errors=%d",
-        "mock" if serp.mock else "live", t["trust"], len(comps), len(tips),
-        "yes" if ai_tips else "no", len(errors),
+        "copilot trust=%s verdict=%s data: serp=%s competitors=%d gaps=%d "
+        "trend_pct=%s tips=%d summary_from=%s errors=%d total_ms=%d",
+        t["trust"], t.get("verdict"), "mock" if serp.mock else "live",
+        len(comps), len(comp_themes), chg, len(tips),
+        "openai" if ai_tips else "rule_based", len(errors), (time.perf_counter() - t_start) * 1000,
     )
+    if errors:
+        log.warning("copilot serp errors=%s", errors)
     return {
         "business": business, "category": category, "location": location,
         "mode": "mock" if serp.mock else "live", "ai_polished": bool(ai_tips),

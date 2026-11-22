@@ -11,12 +11,14 @@ Abuse safeguard: one report per reporter per key (reporter = hash of IP).  Set D
 to allow repeats while rehearsing.  Production would also weight by reporter reliability.
 """
 import hashlib
+import logging
 import os
 import re
 import sqlite3
 import time
 from contextlib import closing
 
+log = logging.getLogger("db")
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data.db"))
 DEMO_REPEAT = os.getenv("DEMO_REPEAT", "") == "1"
 
@@ -54,7 +56,13 @@ def init():
         CREATE INDEX IF NOT EXISTS ix_hist ON score_history(business, location);
         """)
         c.commit()
+    with closing(_conn()) as c:
+        n_rep = c.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
     seed()
+    with closing(_conn()) as c:
+        log.info("init ok path=%s reports=%d (before seed %d) history_rows=%d", DB_PATH,
+                 c.execute("SELECT COUNT(*) FROM reports").fetchone()[0], n_rep,
+                 c.execute("SELECT COUNT(*) FROM score_history").fetchone()[0])
 
 
 def seed():
@@ -89,7 +97,9 @@ def add_report(query, reason, reporter):
                       (key, (reason or "")[:200], reporter if not DEMO_REPEAT else f"{reporter}-{time.time()}", time.time()))
             c.commit()
             added = True
-    return added, count_reports(query)
+    total = count_reports(query)
+    log.info("report key=%r added=%s total_reporters=%d reporter=%s", key, added, total, reporter[:6])
+    return added, total
 
 
 def count_reports(query):
@@ -104,6 +114,7 @@ def reset_demo():
         c.execute("DELETE FROM reports WHERE seeded=0")
         c.execute("DELETE FROM score_history WHERE seeded=0")
         c.commit()
+    log.warning("reset_demo: removed all non-seeded reports and history")
 
 
 # ------------------------------------------------------------- score history
@@ -125,3 +136,19 @@ def history(business, location, limit=12):
         rows = c.execute("SELECT trust, created_at FROM score_history WHERE business=? AND location=? "
                          "ORDER BY created_at DESC LIMIT ?", (business.strip().lower(), location.strip().lower(), limit)).fetchall()
     return [{"trust": r["trust"], "t": r["created_at"]} for r in reversed(rows)]
+
+
+# -------------------------------------------------------------------- admin
+def dump(limit=200):
+    """Read-only snapshot for the admin endpoint."""
+    with closing(_conn()) as c:
+        reports = [dict(r) for r in c.execute(
+            "SELECT id, key, reason, seeded, datetime(created_at,'unixepoch','localtime') AS time "
+            "FROM reports ORDER BY id DESC LIMIT ?", (limit,))]
+        per_key = [dict(r) for r in c.execute(
+            "SELECT key, COUNT(DISTINCT reporter) AS reporters, COUNT(*) AS rows_ FROM reports "
+            "GROUP BY key ORDER BY reporters DESC")]
+        hist = [dict(r) for r in c.execute(
+            "SELECT business, location, trust, seeded, datetime(created_at,'unixepoch','localtime') AS time "
+            "FROM score_history ORDER BY id DESC LIMIT ?", (limit,))]
+    return {"reports": reports, "reports_per_id": per_key, "score_history": hist}

@@ -1,17 +1,17 @@
 services:
-  - type: web
-    name: paytm-trust-growth
-    runtime: docker
-    plan: free
-    healthCheckPath: /api/health
+  - type: web                  # a public web service
+    name: paytm-trust-growth   # becomes the URL: paytm-trust-growth.onrender.com
+    runtime: docker            # builds from your Dockerfile
+    plan: free                 # free tier (sleeps when idle, disk resets)
+    healthCheckPath: /api/health   # Render pings this to know the app is up
     envVars:
       - key: SERPAPI_KEY
-        sync: false          # paste in Render dashboard, never commit
+        sync: false            # "ask me for the value"; never stored in Git
       - key: LLM_PROVIDER
-        value: openai
+        value: openai          # use OpenAI (now honored by the updated ai.py)
       - key: OPENAI_API_KEY
-        sync: false
+        sync: false            # you paste it in Render
       - key: OPENAI_MODEL
-        value: gpt-4o-mini
+        value: gpt-4o-mini     # cheap and fast; fine for this task
       - key: DEMO_REPEAT
-        value: "1"           # lets you repeat 'Report' during the demo; remove for real use
+        value: "1"             # repeat reports in the demo

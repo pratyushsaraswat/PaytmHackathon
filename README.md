@@ -181,6 +181,28 @@ The scoring is rule-based so every score is explainable. With no evidence at all
 
 ---
 
+## Logging
+
+Every line carries a **request id** that follows one request through the API, the parallel SerpApi calls, the LLM and the database:
+
+```
+13:15:24 INFO  [a1b2c3d4] api: api /check IN query='kbc-winner-claim@okaxis'
+13:15:24 INFO  [a1b2c3d4] serp: serp data_source=http engine=google q='...'
+13:15:25 INFO  [a1b2c3d4] serp: serp response engine=google n=10 ms=912 preview=[...]
+13:15:25 INFO  [a1b2c3d4] checker: check kind=upi trust=17 verdict=risky ... dropped_irrelevant=(6, 0) sqlite_reports=3 summary_from=openai errors=0 total_ms=1320
+13:15:25 INFO  [a1b2c3d4] api: REQ POST /api/check -> 200 in 1324ms
+```
+
+- The same id is returned in the `X-Request-ID` response header. Send your own with `-H "x-request-id: demo1"` and grep for it.
+- `data_source=http|cache|mock` shows where every result came from; `summary_from=openai|rule_based` shows whether the LLM was used.
+- `dropped_irrelevant=(a, b)` = search/news results ignored because they did not mention the thing being checked.
+- Secrets are redacted automatically (`api_key=***`, `Bearer ***`, `sk-***`); urllib3 debug logging is disabled because it prints API keys in URLs.
+- Errors: failed jobs log `job=... FAILED`, SerpApi/LLM failures log latency + reason, crashes log a full traceback and return `{"detail": "Internal error", "request_id": "..."}`.
+- `LOG_LEVEL=DEBUG` adds full SerpApi JSON, the full LLM reply and per-job timings. `LOG_FILE=app.log` adds a rotating file.
+- Find one request: `grep a1b2c3d4 app.log`. On Render: Logs tab, search the id.
+
+---
+
 ## Limitations
 
 - A search-based check can't prove an ID is safe. A brand-new scam ID has no history yet.

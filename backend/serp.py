@@ -109,14 +109,24 @@ class Serp:
             log.info("serp data_source=cache engine=%s n=%d q=%r preview=%s", engine, n, q, prev)
             return hit["d"]
         params["api_key"] = self.key
+        t0 = time.perf_counter()
         log.info("serp data_source=http engine=%s q=%r", engine, q)
         log.info("serp curl: %s", _curl_line(params))
-        r = requests.get(BASE, params=params, timeout=45)
-        r.raise_for_status()
+        try:
+            r = requests.get(BASE, params=params, timeout=45)
+            r.raise_for_status()
+        except requests.RequestException as e:
+            body = getattr(getattr(e, "response", None), "text", "") or ""
+            log.error("serp http FAILED engine=%s q=%r after %dms err=%s body=%s", engine, q, (time.perf_counter() - t0) * 1000, e, body[:400])
+            raise
         data = r.json()
+        if data.get("error"):
+            msg = str(data.get("error"))
+            lvl = logging.INFO if "hasn't returned any results" in msg else logging.ERROR  # empty result is normal
+            log.log(lvl, "serp api %s engine=%s msg=%s", "empty" if lvl == logging.INFO else "error", engine, msg)
         n = _result_n(engine, data)
         prev = _response_preview(engine, data)
-        log.info("serp response engine=%s n=%d preview=%s", engine, n, prev)
+        log.info("serp response engine=%s n=%d ms=%d preview=%s", engine, n, (time.perf_counter() - t0) * 1000, prev)
         if log.isEnabledFor(logging.DEBUG):
             log.debug("serp response_body=%s", json.dumps(data, default=str)[:8000])
         with self._lock:
@@ -240,22 +250,29 @@ def _is_scammy(s):
     return any(h in s for h in SCAM_HINTS)
 
 
+def _ident_of(q):
+    """First token of a mock query = the ID/domain being checked (so mock evidence names it, like real results)."""
+    toks = q.strip().split()
+    return toks[0].strip('"') if toks else q
+
+
 def _mock_search(q):
     ql = q.lower()
+    ident = _ident_of(ql)
     name = ql.replace("scam", "").replace("fraud", "").replace("complaint", "").replace("reviews", "").strip()
     if _is_scammy(ql):
         return [
-            {"title": f"{name} - Is it a scam? 38 complaints | ConsumerComplaints", "snippet": "Many users lost money after paying a 'processing fee'. Beware, never delivered the prize.",
+            {"title": f"{name} - Is it a scam? 38 complaints | ConsumerComplaints", "snippet": f"{ident}: many users lost money after paying a 'processing fee'. Beware, never delivered the prize.",
              "link": "https://www.consumercomplaints.in/x", "source": "consumercomplaints.in"},
-            {"title": "r/IndiaScams: got duped by this UPI ID, lost money", "snippet": "Fake lottery winner message asking for advance payment. Total fraud.",
+            {"title": f"r/IndiaScams: got duped by {ident}, lost money", "snippet": "Fake lottery winner message asking for advance payment. Total fraud.",
              "link": "https://www.reddit.com/r/IndiaScams/x", "source": "reddit.com"},
-            {"title": "Cyber cell warns about fake reward and KYC messages", "snippet": "Police advisory: phishing links asking for OTP and UPI PIN.",
+            {"title": f"Cyber cell warns about fake reward and KYC messages ({ident})", "snippet": "Police advisory: phishing links asking for OTP and UPI PIN.",
              "link": "https://timesofindia.indiatimes.com/x", "source": "timesofindia.indiatimes.com"},
-            {"title": "Quora: Is this offer genuine? Looks like a fraud", "snippet": "Victims report blocked after payment. Complaint filed on cybercrime.gov.in",
+            {"title": f"Quora: Is {ident} genuine? Looks like a fraud", "snippet": "Victims report blocked after payment. Complaint filed on cybercrime.gov.in",
              "link": "https://www.quora.com/x", "source": "quora.com"},
-            {"title": "ScamAdviser: low trust score", "snippet": "This website has a very low trust score and may be a scam.",
+            {"title": f"ScamAdviser: {ident} has a low trust score", "snippet": "This website has a very low trust score and may be a scam.",
              "link": "https://www.scamadviser.com/x", "source": "scamadviser.com"},
-            {"title": "MouthShut reviews: avoid, fake offers", "snippet": "Not genuine. Duped customers of Rs 2000 each.",
+            {"title": f"MouthShut reviews of {ident}: avoid, fake offers", "snippet": "Not genuine. Duped customers of Rs 2000 each.",
              "link": "https://www.mouthshut.com/x", "source": "mouthshut.com"},
         ]
     if any(k in ql for k in ["sharma", "sweet", "cafe", "kirana", "verified", "paytm", "bakery", "mart"]):
@@ -270,10 +287,11 @@ def _mock_search(q):
 
 def _mock_news(q):
     ql = q.lower()
+    ident = _ident_of(ql)
     if _is_scammy(ql):
-        return [{"title": "Police arrest gang running fake lottery and KYC scam via UPI", "link": "https://www.ndtv.com/x",
+        return [{"title": f"Police arrest gang running fake lottery and KYC scam via UPI ({ident})", "link": "https://www.ndtv.com/x",
                  "source": "NDTV", "date": "2 days ago"},
-                {"title": "Beware: fraud messages claiming reward claim are doing rounds", "link": "https://www.hindustantimes.com/x",
+                {"title": f"Beware: fraud messages from {ident} claiming reward are doing rounds", "link": "https://www.hindustantimes.com/x",
                  "source": "Hindustan Times", "date": "1 week ago"}]
     if "festival" in ql or "market" in ql or "demand" in ql:
         return [{"title": "Winter wedding and festive season boosts local retail footfall", "link": "https://economictimes.indiatimes.com/x",
