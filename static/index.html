@@ -18,7 +18,7 @@
   .badge{float:right;font-size:11px;padding:3px 9px;border-radius:99px;background:rgba(255,255,255,.15)}
   .badge.live{background:#1a9d5c}
   .tabs{display:flex;margin:-34px 14px 0;background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(0,41,112,.12);overflow:hidden;position:relative}
-  .tab{flex:1;padding:13px 6px;text-align:center;font-weight:700;font-size:14px;color:var(--mute);cursor:pointer;border:0;background:none;border-bottom:3px solid transparent}
+  .tab{flex:1;padding:9px 2px 8px;text-align:center;font-weight:700;font-size:11px;line-height:1.2;color:var(--mute);cursor:pointer;border:0;background:none;border-bottom:3px solid transparent}
   .tab.on{color:var(--navy);border-bottom-color:var(--cyan)}
   main{padding:14px}
   .card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,41,112,.07)}
@@ -63,6 +63,17 @@
   .bar i{display:block;height:100%;background:var(--bad);border-radius:9px}
   .trust-line{display:flex;gap:14px;align-items:center}
   .plan li{font-size:13.5px;margin:5px 0}
+  .tab span{display:block;font-size:19px;margin-bottom:1px}
+  .banner{border-radius:16px;padding:16px;color:#fff;margin-bottom:14px;background:var(--navy)}
+  .banner.good{background:var(--ok)} .banner.warn{background:var(--warn)} .banner.bad{background:var(--bad)}
+  .banner .big{font-size:20px;font-weight:800;margin-bottom:4px} .banner .sm{font-size:13.5px;opacity:.95;line-height:1.4}
+  .price{font-weight:800;font-size:17px;text-align:right} .price s{display:block;color:var(--mute);font-weight:500;font-size:12px}
+  .save{color:var(--ok);font-weight:700;font-size:12.5px} .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:#eaf6fd;color:#0a6ea0;font-weight:700;margin-right:4px}
+  .pill.best{background:var(--ok);color:#fff} .note{font-size:12px;color:var(--mute);margin-top:8px;line-height:1.4}
+  .disc{background:#fff6e0;border:1.5px solid #f0c36d;color:#7a5600;border-radius:12px;padding:11px;font-size:12.5px;line-height:1.45;margin-bottom:14px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px} .day{border-left:3px solid var(--cyan);padding:2px 0 2px 11px;margin:0 0 12px}
+  .day b{font-size:14px} .stop{font-size:13.5px;margin:5px 0} .stop small{color:var(--mute)}
+  .up{color:var(--ok)} .down{color:var(--bad)} .btn.sm2{margin-top:10px;padding:10px;font-size:13px}
   .foot{text-align:center;font-size:11.5px;color:var(--mute);padding:6px 0 24px}
   .err{background:#fdecea;color:#a1271c;padding:11px;border-radius:10px;font-size:13.5px}
 </style>
@@ -71,12 +82,15 @@
 <div class="phone">
   <header>
     <span class="badge" id="mode">…</span>
-    <div class="logo">pay<b>tm</b> <span style="font-weight:600;font-size:15px">Trust & Growth</span></div>
-    <div class="sub">One trust engine: safer payments for customers, more business for merchants</div>
+    <div class="logo">pay<b>tm</b> <span style="font-weight:600;font-size:15px">Trust, Growth & Smart Money</span></div>
+    <div class="sub">One SerpApi data layer: safer payments, smarter shopping, travel and investing</div>
   </header>
   <div class="tabs">
-    <button class="tab on" data-t="pay">🛡️ Pay Safely</button>
-    <button class="tab" data-t="grow">📈 Grow My Business</button>
+    <button class="tab on" data-t="pay"><span>🛡️</span>Pay Safely</button>
+    <button class="tab" data-t="grow"><span>📈</span>My Business</button>
+    <button class="tab" data-t="deals"><span>🛍️</span>Smart Deals</button>
+    <button class="tab" data-t="travel"><span>✈️</span>Travel</button>
+    <button class="tab" data-t="money"><span>💹</span>Money</button>
   </div>
 
   <main>
@@ -108,8 +122,54 @@
     </div>
     <div id="growOut"></div>
   </section>
+  <!-- ===================== SMART DEALS ===================== -->
+  <section id="deals" class="hide">
+    <div class="card">
+      <h3>Find the real cheapest price</h3>
+      <label>Product</label><input id="dp" value="iPhone 15 128GB" autocomplete="off">
+      <div class="chips">
+        <button class="chip" data-d="iPhone 15 128GB">iPhone 15</button>
+        <button class="chip" data-d="Samsung 55 inch 4K TV">55" TV</button>
+        <button class="chip" data-d="Sony WH-1000XM5 headphones">Headphones</button>
+        <button class="chip" data-d="HP laptop 16GB RAM">Laptop</button>
+      </div>
+      <button class="btn navy" id="dealsBtn">Compare prices + Paytm offers</button>
+    </div>
+    <div id="dealsOut"></div>
+  </section>
+
+  <!-- ===================== TRAVEL ===================== -->
+  <section id="travel" class="hide">
+    <div class="card">
+      <h3>Plan a trip</h3>
+      <div class="grid2"><div><label>From</label><input id="tf" value="Delhi"></div><div><label>To</label><input id="tt" value="Goa"></div></div>
+      <div class="grid2"><div><label>Depart (blank = in 30 days)</label><input id="td" type="date"></div><div><label>Nights</label><input id="tn" type="number" min="1" max="14" value="3"></div></div>
+      <div class="chips">
+        <button class="chip" data-t1="Delhi" data-t2="Goa">Delhi → Goa</button>
+        <button class="chip" data-t1="Mumbai" data-t2="Jaipur">Mumbai → Jaipur</button>
+        <button class="chip" data-t1="Bengaluru" data-t2="Kochi">Bengaluru → Kochi</button>
+      </div>
+      <button class="btn navy" id="travelBtn">Plan my trip</button>
+    </div>
+    <div id="travelOut"></div>
+  </section>
+
+  <!-- ===================== MONEY ===================== -->
+  <section id="money" class="hide">
+    <div class="disc"><b>Not financial advice.</b> Educational summaries only. We never tell you to buy, sell or hold.</div>
+    <div class="card">
+      <h3>Why did this stock move?</h3>
+      <label>Company name or NSE ticker</label><input id="ms" value="Reliance" autocomplete="off">
+      <div class="chips">
+        <button class="chip" data-m="Reliance">Reliance</button><button class="chip" data-m="TCS">TCS</button>
+        <button class="chip" data-m="Paytm">Paytm</button><button class="chip" data-m="Infosys">Infosys</button>
+      </div>
+      <button class="btn navy" id="moneyBtn">Explain in plain language</button>
+    </div>
+    <div id="moneyOut"></div>
+  </section>
   </main>
-  <div class="foot">Powered by SerpApi (Google Search, News, Maps, Reviews, Trends, Extract)<br>
+  <div class="foot">Powered by SerpApi (Google Search, News, Maps, Reviews, Trends, Shopping, Amazon, Flights, Hotels, Finance, Extract)<br>
   An extra safety layer — never share your OTP or UPI PIN with anyone.</div>
 </div>
 
@@ -124,8 +184,7 @@ fetch("/api/health").then(r=>r.json()).then(h=>{
 
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
-  $("#pay").classList.toggle("hide",t.dataset.t!=="pay");
-  $("#grow").classList.toggle("hide",t.dataset.t!=="grow");
+  ["pay","grow","deals","travel","money"].forEach(id=>$("#"+id).classList.toggle("hide",t.dataset.t!==id));
 });
 document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{$("#q").value=c.dataset.q;check();});
 $("#checkBtn").onclick=()=>check(); $("#q").onkeydown=e=>{if(e.key==="Enter")check()};
@@ -176,11 +235,11 @@ async function check(note){
   $("#checkBtn").disabled=false;
 }
 
-function spark(v){
+function spark(v,color){
   if(!v||v.length<2)return"";
   const w=360,h=70,mx=Math.max(...v),mn=Math.min(...v),sp=(mx-mn)||1;
   const pts=v.map((y,i)=>`${(i/(v.length-1)*w).toFixed(1)},${(h-6-(y-mn)/sp*(h-14)).toFixed(1)}`).join(" ");
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="70"><polyline points="${pts}" fill="none" stroke="#00baf2" stroke-width="3" stroke-linejoin="round"/></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="70"><polyline points="${pts}" fill="none" stroke="${color||"#00baf2"}" stroke-width="3" stroke-linejoin="round"/></svg>`;
 }
 
 async function grow(){
@@ -222,6 +281,75 @@ async function grow(){
   }catch(e){out.innerHTML=`<div class="err">${esc(e.message)}</div>`}
   $("#growBtn").disabled=false;
 }
+
+/* ============ shared helpers ============ */
+const inr=n=>"₹"+Math.round(n).toLocaleString("en-IN");
+const demo=m=>alert(m+" (demo: connects to Paytm here)");
+async function run(btn,out,msg,fn){btn.disabled=true;out.innerHTML=spin(msg);
+  try{out.innerHTML=await fn()}catch(e){out.innerHTML=`<div class="err">${esc(e.message)}</div>`}btn.disabled=false}
+
+/* ============ Smart Deals ============ */
+document.querySelectorAll("[data-d]").forEach(c=>c.onclick=()=>{$("#dp").value=c.dataset.d;deals()});
+$("#dealsBtn").onclick=deals; $("#dp").onkeydown=e=>{if(e.key==="Enter")deals()};
+function deals(){return run($("#dealsBtn"),$("#dealsOut"),"Comparing Google Shopping &amp; Amazon prices…",async()=>{
+  const r=await post("/api/deals",{product:$("#dp").value});
+  if(!r.stores.length)return `<div class="card">${esc(r.headline)}</div>`;
+  return `<div class="banner ${r.extra_saving>0?"good":""}"><div class="big">${r.extra_saving>0?"Save "+inr(r.extra_saving)+" vs the cheapest sticker price":"Best price found"}</div>
+      <div class="sm">${esc(r.headline)}</div></div>
+    <div class="card"><h3>Prices across stores (after Paytm offers)</h3>
+      ${r.stores.map((s,i)=>`<div class="row" style="align-items:flex-start"><div style="max-width:62%">
+          ${i===0?'<span class="pill best">BEST WITH PAYTM</span>':""}<b>${esc(s.store)}</b>
+          <small>${esc(s.title).slice(0,60)}</small>
+          <div class="save">−${inr(s.offer.saving)} · ${esc(s.offer.label)}</div>
+          ${s.offer.emi?`<small>💳 ${esc(s.offer.emi.label)}: ${inr(s.offer.emi.monthly)}/mo × ${s.offer.emi.months}</small>`:""}
+          <button class="btn sm2 ${i===0?"":"ghost"}" onclick="demo('Pay with Paytm at ${esc(s.store).replace(/'/g,"")}')">Pay with Paytm</button></div>
+        <div class="price">${inr(s.offer.effective)}<s>${inr(s.price)}</s>${s.link&&s.link!=="#"?`<a class="ev" style="border:0" target="_blank" rel="noopener" href="${safeLink(s.link)}">view ↗</a>`:""}</div></div>`).join("")}
+      <div class="note">Prices are live from Google Shopping + Amazon via SerpApi. ⚠️ Paytm offers shown are an <b>illustrative demo table</b>, not live Paytm offers.</div></div>`;});}
+
+/* ============ Travel ============ */
+document.querySelectorAll("[data-t1]").forEach(c=>c.onclick=()=>{$("#tf").value=c.dataset.t1;$("#tt").value=c.dataset.t2;travel()});
+$("#travelBtn").onclick=travel;
+function travel(){return run($("#travelBtn"),$("#travelOut"),"Checking flights, hotels, places &amp; news…",async()=>{
+  const r=await post("/api/travel",{origin:$("#tf").value,destination:$("#tt").value,depart:$("#td").value,nights:+$("#tn").value||3});
+  return `<div class="banner ${r.signal?r.signal.tone:""}"><div class="big">${r.signal?esc(r.signal.action):"Trip plan"} · ${esc(r.origin)} → ${esc(r.destination)}</div>
+      <div class="sm">${r.signal?esc(r.signal.why):"No fare data found for these dates."}</div></div>
+    ${r.price_history.length>2?`<div class="card"><h3>Fare history for this route</h3>${spark(r.price_history,"#1a9d5c")}</div>`:""}
+    ${r.cost?`<div class="card"><h3>Estimated trip cost · ${r.cost.travellers} travellers</h3>
+      <div class="row"><span>✈️ Flights (${esc(r.cost.flight_name)}, round trip)</span><b>${inr(r.cost.flights)}</b></div>
+      <div class="row"><span>🏨 ${esc(r.cost.hotel_name)} · ${r.nights} nights</span><b>${inr(r.cost.hotel)}</b></div>
+      <div class="row"><b>Total</b><b>${inr(r.cost.total)}</b></div>
+      <div class="nudge" style="margin-top:10px"><span class="ic">💳</span><div><b>Pay later with Paytm Postpaid</b><p>${inr(r.cost.postpaid_emi)}/month × 3 months</p></div></div>
+      <button class="btn" onclick="demo('One-tap booking through Paytm Travel')">Book this trip with Paytm Travel</button></div>`:""}
+    ${r.alerts.length?`<div class="card"><h3>Before you go</h3>${r.alerts.map(a=>`<div class="reason"><span>${a.tag.split(" ")[0]}</span><div>${esc(a.title)}<small style="display:block;color:var(--mute)">${esc(a.tag.split(" ").slice(1).join(" "))} · ${esc(a.source)}</small></div></div>`).join("")}</div>`:""}
+    <div class="card"><h3>Flights · ${esc(r.depart)} → ${esc(r.return)}</h3>
+      ${r.flights.length?r.flights.map(f=>`<div class="row"><div>${esc(f.airline)} <small>${esc(f.dep.slice(-5))} → ${esc(f.arr.slice(-5))} · ${f.stops?f.stops+" stop":"non-stop"}${f.duration_min?" · "+Math.floor(f.duration_min/60)+"h "+(f.duration_min%60)+"m":""}</small></div><b>${inr(f.price)}</b></div>`).join(""):"<small>No flights found.</small>"}</div>
+    <div class="card"><h3>Hotels · ${r.nights} nights</h3>
+      ${r.hotels.length?r.hotels.map((h,i)=>`<div class="row"><div>${i===0?'<span class="pill best">BEST VALUE</span>':""}${esc(h.name)}<small>${h.rating?h.rating+"★ · ":""}${h.stars?h.stars+"-star":""}</small></div><b>${inr(h.per_night)}<small>/night</small></b></div>`).join(""):"<small>No hotels found.</small>"}</div>
+    <div class="card"><h3>Suggested itinerary</h3>
+      ${r.itinerary.map(d=>`<div class="day"><b>Day ${d.day} · ${esc(d.title)}</b>
+        ${d.stops.map(s=>`<div class="stop">📍 ${esc(s.name)} <span class="star">${s.rating}★</span>${s.km_from_prev!=null?`<small> · ${s.km_from_prev} km from previous (~${s.cab_min} min by cab)</small>`:""}</div>`).join("")}</div>`).join("")}
+      <div class="note">Fares, hotels, places and news are live from Google Flights, Hotels, Maps and News via SerpApi. Booking is a demo hook.</div></div>`;});}
+
+/* ============ Money ============ */
+document.querySelectorAll("[data-m]").forEach(c=>c.onclick=()=>{$("#ms").value=c.dataset.m;money()});
+$("#moneyBtn").onclick=money; $("#ms").onkeydown=e=>{if(e.key==="Enter")money()};
+function money(){return run($("#moneyBtn"),$("#moneyOut"),"Reading Google Finance, news &amp; announcements…",async()=>{
+  const r=await post("/api/money",{stock:$("#ms").value}), up=(r.change_pct||0)>=0;
+  return `<div class="card"><div class="row" style="border:0"><div><h3 style="margin:0">${esc(r.name)}</h3><small style="color:var(--mute)">${esc(r.symbol)}</small></div>
+      <div class="price">₹${r.price.toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}
+        ${r.change_pct!=null?`<span class="${up?"up":"down"}" style="font-size:14px">${up?"▲":"▼"} ${Math.abs(r.change_pct).toFixed(2)}%</span>`:""}</div></div>
+      ${spark(r.graph,up?"#1a9d5c":"#d93025")}</div>
+    <div class="card"><h3>In plain language</h3><div style="font-size:14.5px;line-height:1.5">${esc(r.summary_ai||r.summary)}</div>
+      ${r.summary_ai?`<div class="note">✨ AI-worded from the facts below.</div>`:""}</div>
+    ${r.themes.length?`<div class="card"><h3>What these terms mean</h3>${r.themes.map(t=>`<div class="reason"><span class="dot info">i</span><div>${esc(t.explain)}</div></div>`).join("")}</div>`:""}
+    ${r.announcement.facts.length?`<div class="card"><h3>From the announcement page (Extract API)</h3>
+      ${r.announcement.facts.map(f=>`<div class="reason"><span class="dot good">✓</span><div>${esc(f)}</div></div>`).join("")}
+      ${r.announcement.source?`<a class="ev" target="_blank" rel="noopener" href="${safeLink(r.announcement.source.link)}">Read the full page ↗<small>${esc(r.announcement.source.title)}</small></a>`:""}</div>`:""}
+    <div class="card"><h3>News about ${esc(r.name)}</h3>
+      ${r.news.length?r.news.map(n=>`<a class="ev" target="_blank" rel="noopener" href="${safeLink(n.link)}">${esc(n.title)}<small>${esc(n.source||"")} ${esc(n.date||"")}</small></a>`).join(""):"<small>No company-specific news found today.</small>"}
+      ${r.market_news.length?`<h3 style="margin-top:12px">Market-wide</h3>`+r.market_news.map(n=>`<a class="ev" target="_blank" rel="noopener" href="${safeLink(n.link)}">${esc(n.title)}<small>${esc(n.source||"")}</small></a>`).join(""):""}</div>
+    <div class="card"><div style="font-size:13.5px;line-height:1.5">💡 ${esc(r.glossary)}</div></div>
+    <div class="disc"><b>Not financial advice.</b> ${esc(r.disclaimer)}</div>`;});}
 </script>
 </body>
 </html>

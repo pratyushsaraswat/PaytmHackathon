@@ -34,6 +34,8 @@ def check(query):
     t_start = time.perf_counter()
     q = query.strip()
     kind = detect(q)
+    log.info("check IN kind=%s serp=%s llm_config=%s query=%r", kind, "mock" if serp.mock else "live",
+             ai.status_line(), q[:100])
     flags, maps_place, page_text = [], None, ""
 
     # plan every SerpApi call, then run them in parallel
@@ -101,10 +103,10 @@ def check(query):
     out["summary"] = ai_text or _fallback_summary(out)
     log.info(
         "check kind=%s trust=%s verdict=%s data: serp=%s jobs=%s search=%d news=%d "
-        "dropped_irrelevant=%s sqlite_reports=%d summary_from=%s errors=%d total_ms=%d",
+        "dropped_irrelevant=%s sqlite_reports=%d summary_from=%s llm_config=%s errors=%d total_ms=%d",
         kind, out["trust"], out["verdict"], "mock" if serp.mock else "live",
         sorted(res.keys()), len(search_results), len(news), dropped, reports,
-        "openai" if ai_text else "rule_based", len(errors), (time.perf_counter() - t_start) * 1000,
+        "openai" if ai_text else "rule_based", ai.status_line(), len(errors), (time.perf_counter() - t_start) * 1000,
     )
     if errors:
         log.warning("check serp errors=%s", errors)

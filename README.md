@@ -247,3 +247,23 @@ Built for the Paytm hackathon · Powered by [SerpApi](https://serpapi.com)
 | gzip responses, SQLite WAL | smaller payloads, readers do not block writers |
 
 `/api/health` now also shows `serp_cache_hits` (credits saved this run).
+
+
+## New tabs: Smart Deals, Travel, Money
+
+| Tab | Endpoint | SerpApi engines | Credits/run (live) |
+|---|---|---|---|
+| Smart Deals | `POST /api/deals {"product"}` | `google_shopping`, `amazon` | 2 |
+| Travel | `POST /api/travel {"origin","destination","depart"?,"nights"?}` | `google_flights`, `google_hotels`, `google_maps`, `google_news` | 4 |
+| Money | `POST /api/money {"stock"}` | `google_finance`, `google_news`, `extract` | 3 |
+
+```bash
+curl -s -X POST localhost:8000/api/deals  -H "Content-Type: application/json" -d '{"product":"iPhone 15 128GB"}'
+curl -s -X POST localhost:8000/api/travel -H "Content-Type: application/json" -d '{"origin":"Delhi","destination":"Goa","nights":3}'
+curl -s -X POST localhost:8000/api/money  -H "Content-Type: application/json" -d '{"stock":"Reliance"}'
+```
+
+- **Paytm offers are a demo table** (`backend/offers.py`): Paytm has no public offers API. Replace `best_offer()` with Paytm's offers service in production. The UI says so.
+- **Travel "book now or wait"** comes from Google Flights' own price insight (low / typical / high vs the route's typical range). Itinerary stops are ordered by distance (GPS from Maps). Booking and Postpaid buttons are demo hooks.
+- **Money** is educational: it says what the headlines mention, never what *caused* a move, never buy/sell advice, and always shows the "not financial advice" disclaimer. Optional OpenAI wording uses only the fetched facts.
+- Cache lifetimes: finance 15 min, flights 3 h, hotels/shopping 6 h.

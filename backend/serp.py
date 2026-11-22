@@ -22,7 +22,8 @@ log = logging.getLogger("serp")
 BASE = "https://serpapi.com/search.json"
 CACHE_FILE = os.path.join(os.path.dirname(__file__), ".cache.json")
 CACHE_TTL = 24 * 3600
-TTL_BY_ENGINE = {"google_news": 6 * 3600, "extract": 3600}   # news changes fast; pages change; the rest is stable
+TTL_BY_ENGINE = {"google_news": 6 * 3600, "extract": 3600, "google_finance": 900, "google_flights": 3 * 3600,
+                 "google_hotels": 6 * 3600, "google_shopping": 6 * 3600, "amazon": 6 * 3600}   # news changes fast; pages change; the rest is stable
 MAX_CACHE_ENTRIES = 500
 RETRY_STATUS = {429, 500, 502, 503, 504}
 
@@ -38,7 +39,7 @@ def _query_label(params):
 def _result_n(engine, data):
     if not isinstance(data, dict):
         return 0
-    for key in ("organic_results", "news_results", "local_results", "reviews"):
+    for key in ("organic_results", "news_results", "local_results", "reviews", "shopping_results", "properties", "best_flights", "graph"):
         if data.get(key):
             return len(data[key])
     if data.get("place_results"):
@@ -105,7 +106,7 @@ def _slim(engine, d):
                                 "source": {"name": (x.get("source") or {}).get("name", "") if isinstance(x.get("source"), dict) else str(x.get("source") or "")}}
                                for x in (d.get("news_results") or [])]
     elif engine == "google_maps":
-        keep = ("title", "rating", "reviews", "address", "open_state", "hours", "data_id", "type")
+        keep = ("title", "rating", "reviews", "address", "open_state", "hours", "data_id", "type", "gps_coordinates")
         if d.get("local_results"):
             out["local_results"] = [{k: x.get(k) for k in keep} for x in d["local_results"]]
         if d.get("place_results"):
@@ -118,6 +119,46 @@ def _slim(engine, d):
         tl = (d.get("interest_over_time") or {}).get("timeline_data") or []
         out["interest_over_time"] = {"timeline_data": [
             {"date": p.get("date"), "values": [{"extracted_value": (p.get("values") or [{}])[0].get("extracted_value")}]} for p in tl]}
+    elif engine == "google_shopping":
+        out["shopping_results"] = [{k: x.get(k) for k in ("title", "link", "product_link", "source", "price", "extracted_price", "rating", "reviews")}
+                                   for x in (d.get("shopping_results") or [])[:40]]
+    elif engine == "amazon":
+        out["organic_results"] = [{k: x.get(k) for k in ("title", "link", "link_clean", "price", "extracted_price", "rating", "reviews")}
+                                  for x in (d.get("organic_results") or [])[:20]]
+    elif engine == "google_flights":
+        def fl(x):
+            return {"price": x.get("price"), "total_duration": x.get("total_duration"),
+                    "flights": [{"airline": f.get("airline"), "flight_number": f.get("flight_number"), "duration": f.get("duration"),
+                                 "departure_airport": {"id": (f.get("departure_airport") or {}).get("id"), "time": (f.get("departure_airport") or {}).get("time")},
+                                 "arrival_airport": {"id": (f.get("arrival_airport") or {}).get("id"), "time": (f.get("arrival_airport") or {}).get("time")}}
+                                for f in (x.get("flights") or [])]}
+        out["best_flights"] = [fl(x) for x in (d.get("best_flights") or [])[:8]]
+        out["other_flights"] = [fl(x) for x in (d.get("other_flights") or [])[:8]]
+        pi = d.get("price_insights") or {}
+        out["price_insights"] = {k: pi.get(k) for k in ("lowest_price", "price_level", "typical_price_range")}
+        out["price_insights"]["price_history"] = (pi.get("price_history") or [])[-40:]
+    elif engine == "google_hotels":
+        out["properties"] = [{"name": x.get("name"), "overall_rating": x.get("overall_rating"), "reviews": x.get("reviews"),
+                              "hotel_class": x.get("hotel_class"), "extracted_hotel_class": x.get("extracted_hotel_class"),
+                              "link": x.get("link"),
+                              "rate_per_night": {"extracted_lowest": (x.get("rate_per_night") or {}).get("extracted_lowest")},
+                              "gps_coordinates": x.get("gps_coordinates")}
+                             for x in (d.get("properties") or [])[:15]]
+    elif engine == "google_finance":
+        news = d.get("news_results") or []
+        flat = []
+        for n in news:
+            for it in (n.get("items") if isinstance(n, dict) and n.get("items") else [n]):
+                if isinstance(it, dict):
+                    flat.append({"title": it.get("title") or it.get("snippet", ""), "link": it.get("link", ""),
+                                 "source": it.get("source", ""), "date": it.get("date", "")})
+        sm = d.get("summary") or {}
+        out["summary"] = {k: sm.get(k) for k in ("title", "stock", "exchange", "price", "extracted_price", "currency")}
+        out["summary"]["price_movement"] = sm.get("price_movement")
+        out["graph"] = [{"price": p.get("price"), "date": p.get("date")} for p in (d.get("graph") or [])[-250:]]
+        stats = (d.get("key_stats") or {}).get("stats") or []
+        out["key_stats"] = {"stats": [{"label": x.get("label"), "value": x.get("value")} for x in stats[:12] if isinstance(x, dict)]}
+        out["news_results"] = flat[:10]
     elif engine == "extract":
         md = d.get("markdown") or d.get("markdown_content") or ""
         if md:
@@ -324,7 +365,9 @@ class Serp:
             out.append({"title": x.get("title", ""), "rating": x.get("rating"),
                         "reviews": x.get("reviews", 0) or 0, "address": x.get("address", ""),
                         "hours": x.get("open_state") or x.get("hours") or "",
-                        "data_id": x.get("data_id", ""), "type": x.get("type", "")})
+                        "data_id": x.get("data_id", ""), "type": x.get("type", ""),
+                        "gps": ((x.get("gps_coordinates") or {}).get("latitude"), (x.get("gps_coordinates") or {}).get("longitude"))
+                        if x.get("gps_coordinates") else None})
         return out
 
     def reviews(self, data_id, title=""):
@@ -351,6 +394,125 @@ class Serp:
             except Exception:
                 pass
         return vals
+
+    # ------------------------------------------------------------ Deals / Travel / Money
+    def shopping(self, q):
+        """Google Shopping -> [{title, store, price, link, rating, reviews}] (India)"""
+        if self.mock:
+            import mock_extra
+            raw = mock_extra.shopping(q)
+            self._mock_log("shopping", q, raw)
+        else:
+            raw = self._get(engine="google_shopping", q=q, gl="in", hl="en").get("shopping_results", [])
+        return [{"title": x.get("title") or "", "store": x.get("source") or "", "price": x.get("extracted_price"),
+                 "link": x.get("product_link") or x.get("link") or "", "rating": x.get("rating"), "reviews": x.get("reviews") or 0}
+                for x in raw if x.get("extracted_price")]
+
+    def amazon(self, q):
+        """SerpApi Amazon engine (amazon.in) -> same shape as shopping()"""
+        if self.mock:
+            import mock_extra
+            raw = mock_extra.amazon(q)
+            self._mock_log("amazon", q, raw)
+        else:
+            raw = self._get(engine="amazon", k=q, amazon_domain="amazon.in").get("organic_results", [])
+        out = []
+        for x in raw:
+            price = x.get("extracted_price")
+            if price:
+                out.append({"title": x.get("title") or "", "store": "Amazon.in", "price": price,
+                            "link": x.get("link_clean") or x.get("link") or "", "rating": x.get("rating"),
+                            "reviews": x.get("reviews") or 0})
+        return out
+
+    def flights(self, origin, dest, outbound, ret=None):
+        """Google Flights -> {options:[{airline, price, duration_min, stops, dep, arr, ...}], insight:{lowest, level, typical, history}}"""
+        if self.mock:
+            import mock_extra
+            out = mock_extra.flights(origin, dest, outbound, ret)
+            self._mock_log("flights", f"{origin}-{dest} {outbound}", out["options"])
+            return out
+        params = dict(engine="google_flights", departure_id=origin, arrival_id=dest, outbound_date=outbound,
+                      currency="INR", hl="en", gl="in", type=1 if ret else 2)
+        if ret:
+            params["return_date"] = ret
+        d = self._get(**params)
+        opts = []
+        for x in (d.get("best_flights") or []) + (d.get("other_flights") or []):
+            legs = x.get("flights") or []
+            if not legs or not x.get("price"):
+                continue
+            opts.append({"airline": legs[0].get("airline", ""), "price": x["price"], "duration_min": x.get("total_duration"),
+                         "stops": len(legs) - 1, "dep": (legs[0].get("departure_airport") or {}).get("time", ""),
+                         "arr": (legs[-1].get("arrival_airport") or {}).get("time", ""), "from": origin, "to": dest,
+                         "flight_no": legs[0].get("flight_number", "")})
+        opts.sort(key=lambda o: o["price"])
+        pi = d.get("price_insights") or {}
+        hist = [p[1] for p in (pi.get("price_history") or []) if isinstance(p, list) and len(p) > 1]
+        return {"options": opts, "insight": {"lowest": pi.get("lowest_price"), "level": pi.get("price_level"),
+                                             "typical": pi.get("typical_price_range"), "history": hist}}
+
+    def hotels(self, city, check_in, check_out):
+        """Google Hotels -> [{name, rating, reviews, stars, per_night, link}]"""
+        if self.mock:
+            import mock_extra
+            out = mock_extra.hotels(city, check_in, check_out)
+            self._mock_log("hotels", city, out)
+            return out
+        d = self._get(engine="google_hotels", q=f"hotels in {city}", check_in_date=check_in, check_out_date=check_out,
+                      adults=2, currency="INR", gl="in", hl="en")
+        out = []
+        for x in d.get("properties", []):
+            night = (x.get("rate_per_night") or {}).get("extracted_lowest")
+            if night:
+                out.append({"name": x.get("name", ""), "rating": x.get("overall_rating"), "reviews": x.get("reviews") or 0,
+                            "stars": x.get("extracted_hotel_class"), "per_night": night, "link": x.get("link", "")})
+        return out
+
+    def places(self, city):
+        """Top attractions via Google Maps (with GPS for distances)"""
+        if self.mock:
+            import mock_extra
+            out = mock_extra.places(city)
+            self._mock_log("places", city, out)
+            return out
+        return self.maps(f"top tourist attractions in {city}")
+
+    def travel_news(self, city):
+        """News about flights / strikes / weather for a destination"""
+        if self.mock:
+            import mock_extra
+            out = mock_extra.travel_news(city)
+            self._mock_log("travel_news", city, out)
+            return out
+        return self.news(f"{city} flights OR strike OR weather OR delay")
+
+    def finance(self, symbol, name):
+        """Google Finance quote page -> {price, change_pct, movement, graph[], stats[], news[]}"""
+        if self.mock:
+            import mock_extra
+            out = mock_extra.finance(symbol, name)
+            self._mock_log("finance", symbol, [{"price": out["price"], "change_pct": out["change_pct"]}])
+            return out
+        d = self._get(engine="google_finance", q=symbol, hl="en")
+        sm = d.get("summary") or {}
+        pm = sm.get("price_movement") or {}
+        pct = pm.get("percentage")
+        if isinstance(pct, (int, float)) and str(pm.get("movement", "")).lower() == "down":
+            pct = -abs(pct)
+        graph = [p["price"] for p in (d.get("graph") or []) if isinstance(p.get("price"), (int, float))]
+        return {"symbol": symbol, "name": sm.get("title") or name, "price": sm.get("extracted_price"),
+                "currency": sm.get("currency") or "₹", "change_pct": pct, "movement": pm.get("movement"), "graph": graph,
+                "stats": (d.get("key_stats") or {}).get("stats", []),
+                "news": [n for n in d.get("news_results", []) if n.get("title")]}
+
+    def stock_news(self, name, symbol=""):
+        if self.mock:
+            import mock_extra
+            out = mock_extra.stock_news(name, symbol or name)
+            self._mock_log("stock_news", name, out)
+            return out
+        return self.news(f"{name} share price stock")
 
     def extract(self, url):
         """SerpApi Extract API -> page text as Markdown (truncated)"""
@@ -493,6 +655,9 @@ def _mock_trends(q):
 
 
 def _mock_extract(url):
+    if "mock-finance" in url:
+        import mock_extra
+        return mock_extra.announcement(url)
     if _is_scammy(url):
         return ("# Congratulations! You are today's WINNER!\n\nClaim your prize of Rs 25,00,000 now. "
                 "Limited time offer - act now! To receive your reward, pay a small processing fee of Rs 999 "

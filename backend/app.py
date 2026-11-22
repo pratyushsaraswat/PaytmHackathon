@@ -25,6 +25,9 @@ import ai  # noqa: E402
 import checker  # noqa: E402
 import copilot  # noqa: E402
 import db  # noqa: E402
+import deals  # noqa: E402
+import money  # noqa: E402
+import travel  # noqa: E402
 from serp import serp  # noqa: E402
 
 log = logging.getLogger("api")
@@ -70,8 +73,7 @@ log.info(
     llm.get("provider") or "off",
     "set" if os.getenv("OPENAI_API_KEY", "").strip() else "missing",
 )
-if llm.get("enabled"):
-    log.info("startup llm model=%s", llm.get("model"))
+log.info("startup llm_config=%s", ai.status_line())
 log.info("startup config log_level=%s log_file=%s db=%s demo_repeat=%s admin_endpoint=%s",
          os.getenv("LOG_LEVEL", "INFO").upper(), os.getenv("LOG_FILE", "") or "off", db.DB_PATH, db.DEMO_REPEAT,
          "on" if os.getenv("ADMIN_TOKEN", "").strip() else "off")
@@ -92,6 +94,63 @@ class CopilotReq(BaseModel):
     location: str
 
 
+class DealsReq(BaseModel):
+    product: str
+
+
+class TravelReq(BaseModel):
+    origin: str
+    destination: str
+    depart: str = ""
+    nights: int = 3
+
+
+class MoneyReq(BaseModel):
+    stock: str
+
+
+def _bad(e):
+    """ValueError from our own validation -> HTTP 400 with a friendly message."""
+    return HTTPException(400, str(e))
+
+
+@app.post("/api/deals")
+def api_deals(req: DealsReq):
+    p = " ".join(req.product.split())[:120]
+    if len(p) < 2:
+        raise HTTPException(400, "Enter a product, e.g. iPhone 15 128GB")
+    log.info("api /deals IN product=%r", p)
+    out = deals.run(p)
+    log.info("api /deals OK serp_mode=%s stores=%d best=%s offers=local_demo llm=none errors=%d",
+             out["mode"], len(out["stores"]), out["best"], len(out["errors"]))
+    return out
+
+
+@app.post("/api/travel")
+def api_travel(req: TravelReq):
+    log.info("api /travel IN %r -> %r depart=%r nights=%d", req.origin, req.destination, req.depart, req.nights)
+    try:
+        out = travel.run(req.origin, req.destination, req.depart or None, req.nights)
+    except ValueError as e:
+        raise _bad(e)
+    log.info("api /travel OK serp_mode=%s signal=%s flights=%d hotels=%d llm=none errors=%d",
+             out["mode"], (out["signal"] or {}).get("action"), len(out["flights"]), len(out["hotels"]), len(out["errors"]))
+    return out
+
+
+@app.post("/api/money")
+def api_money(req: MoneyReq):
+    log.info("api /money IN stock=%r", req.stock[:60])
+    try:
+        out = money.run(req.stock)
+    except ValueError as e:
+        raise _bad(e)
+    log.info("api /money OK serp_mode=%s %s change=%s summary_from=%s llm_config=%s errors=%d",
+             out["mode"], out["symbol"], out["change_pct"],
+             "openai" if out.get("summary_ai") else "rule_based", ai.status_line(), len(out["errors"]))
+    return out
+
+
 @app.get("/api/health")
 def health():
     info = {
@@ -102,7 +161,8 @@ def health():
         "serp_cache_hits": serp.hits,
         "demo_repeat": db.DEMO_REPEAT,
     }
-    log.debug("api /health ok %s", {k: info[k] for k in ("mode", "serpapi_calls_this_run", "serp_cache_entries")})
+    log.debug("api /health ok mode=%s llm=%s serp_calls=%s cache=%s",
+              info["mode"], info["llm"], info["serpapi_calls_this_run"], info["serp_cache_entries"])
     return info
 
 
@@ -114,8 +174,9 @@ def api_check(req: CheckReq):
     log.info("api /check IN query=%r", q[:120])
     out = checker.check(q)
     log.info(
-        "api /check OK trust=%s verdict=%s mode=%s serp_jobs=%s errors=%d",
-        out.get("trust"), out.get("verdict"), out.get("mode"), out.get("sources_used"), len(out.get("errors") or []),
+        "api /check OK trust=%s verdict=%s serp_mode=%s llm_config=%s serp_jobs=%s errors=%d",
+        out.get("trust"), out.get("verdict"), out.get("mode"), ai.status_line(),
+        out.get("sources_used"), len(out.get("errors") or []),
     )
     if out.get("errors"):
         log.warning("api /check partial errors=%s", out["errors"])
@@ -131,9 +192,9 @@ def api_copilot(req: CopilotReq):
     out = copilot.run(b, c, l)
     trust = out.get("trust") or {}
     log.info(
-        "api /copilot OK trust=%s competitors=%d tips=%d mode=%s errors=%d",
-        trust.get("trust"), len(out.get("competitors") or []), len(out.get("tips") or []),
-        out.get("mode"), len(out.get("errors") or []),
+        "api /copilot OK trust=%s serp_mode=%s tips_polished=%s llm_config=%s competitors=%d errors=%d",
+        trust.get("trust"), out.get("mode"), out.get("ai_polished"), ai.status_line(),
+        len(out.get("competitors") or []), len(out.get("errors") or []),
     )
     if out.get("errors"):
         log.warning("api /copilot partial errors=%s", out["errors"])
@@ -147,7 +208,7 @@ def api_report(req: ReportReq, request: Request):
     ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "").split(",")[0].strip()
     log.info("api /report IN query=%r reason=%r", req.query[:120], (req.reason or "")[:80])
     added, total = db.add_report(req.query, req.reason or "Reported from app", db.reporter_id(ip))
-    log.info("api /report OK added=%s total_reports=%d", added, total)
+    log.info("api /report OK data=sqlite added=%s total_reports=%d serp=none llm=none", added, total)
     return {"added": added, "total_reports": total,
             "message": "Thanks - report saved. It now protects other users." if added else "You already reported this one."}
 

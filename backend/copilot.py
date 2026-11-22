@@ -88,6 +88,8 @@ def _match_own(business, places):
 
 def run(business, category, location):
     t_start = time.perf_counter()
+    log.info("copilot IN serp=%s llm_config=%s business=%r category=%r location=%r",
+             "mock" if serp.mock else "live", ai.status_line(), business, category, location)
     area = f"{category} near {location}"
     errors = []
 
@@ -195,10 +197,10 @@ def run(business, category, location):
 
     log.info(
         "copilot trust=%s verdict=%s data: serp=%s competitors=%d gaps=%d "
-        "trend_pct=%s tips=%d summary_from=%s errors=%d total_ms=%d",
+        "trend_pct=%s tips=%d summary_from=%s llm_config=%s errors=%d total_ms=%d",
         t["trust"], t.get("verdict"), "mock" if serp.mock else "live",
         len(comps), len(comp_themes), chg, len(tips),
-        "openai" if ai_tips else "rule_based", len(errors), (time.perf_counter() - t_start) * 1000,
+        "openai" if ai_tips else "rule_based", ai.status_line(), len(errors), (time.perf_counter() - t_start) * 1000,
     )
     if errors:
         log.warning("copilot serp errors=%s", errors)
