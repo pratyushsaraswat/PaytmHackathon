@@ -7,6 +7,8 @@ services:
     envVars:
       - key: SERPAPI_KEY
         sync: false          # paste in Render dashboard, never commit
+      - key: OPENAI_API_KEY
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: DEMO_REPEAT
