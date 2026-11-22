@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paytm Trust & Growth</title>
+<style>
+  :root{--navy:#002970;--cyan:#00baf2;--bg:#eef3fa;--card:#fff;--ink:#1c2b45;--mute:#6b7a90;
+        --ok:#1a9d5c;--warn:#e69a00;--bad:#d93025;--line:#e3e9f3}
+  *{box-sizing:border-box}
+  body{margin:0;background:#dfe7f3;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);
+       display:flex;justify-content:center;min-height:100vh}
+  .phone{width:100%;max-width:430px;background:var(--bg);min-height:100vh;position:relative;box-shadow:0 0 40px rgba(0,41,112,.15)}
+  header{background:var(--navy);color:#fff;padding:18px 18px 54px}
+  .logo{font-weight:800;font-size:22px;letter-spacing:-.5px}
+  .logo b{color:var(--cyan)}
+  .sub{font-size:13px;opacity:.8;margin-top:2px}
+  .badge{float:right;font-size:11px;padding:3px 9px;border-radius:99px;background:rgba(255,255,255,.15)}
+  .badge.live{background:#1a9d5c}
+  .tabs{display:flex;margin:-34px 14px 0;background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(0,41,112,.12);overflow:hidden;position:relative}
+  .tab{flex:1;padding:13px 6px;text-align:center;font-weight:700;font-size:14px;color:var(--mute);cursor:pointer;border:0;background:none;border-bottom:3px solid transparent}
+  .tab.on{color:var(--navy);border-bottom-color:var(--cyan)}
+  main{padding:14px}
+  .card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,41,112,.07)}
+  h3{margin:0 0 10px;font-size:15px}
+  label{font-size:12px;color:var(--mute);font-weight:600;display:block;margin:10px 0 4px}
+  input{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:10px;font-size:15px;outline:none}
+  input:focus{border-color:var(--cyan)}
+  .btn{width:100%;margin-top:14px;padding:14px;border:0;border-radius:12px;background:var(--cyan);color:#fff;font-weight:800;font-size:15px;cursor:pointer}
+  .btn:disabled{opacity:.6}
+  .btn.navy{background:var(--navy)} .btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--navy);margin-top:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{font-size:12px;padding:6px 10px;border-radius:99px;background:#eaf6fd;color:#0a6ea0;cursor:pointer;border:0}
+  .hide{display:none}
+  .spin{text-align:center;padding:30px;color:var(--mute);font-size:14px}
+  .spin i{display:block;width:30px;height:30px;margin:0 auto 10px;border:3px solid var(--line);border-top-color:var(--cyan);border-radius:50%;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  /* verdict */
+  .verdict{border-radius:16px;padding:18px;color:#fff;text-align:center;margin-bottom:14px}
+  .verdict.safe{background:var(--ok)} .verdict.caution{background:var(--warn)} .verdict.risky{background:var(--bad)}
+  .verdict .big{font-size:21px;font-weight:800;margin:6px 0 2px}
+  .verdict .sm{font-size:13px;opacity:.92}
+  .gauge{width:110px;height:110px;margin:0 auto}
+  .reason{display:flex;gap:9px;font-size:14px;padding:8px 0;border-bottom:1px solid var(--line);line-height:1.35}
+  .reason:last-child{border:0}
+  .dot{flex:none;width:20px;height:20px;border-radius:50%;color:#fff;font-size:12px;display:grid;place-items:center;font-weight:800;margin-top:1px}
+  .dot.bad{background:var(--bad)} .dot.good{background:var(--ok)} .dot.info{background:#7a8aa3}
+  .ev{display:block;font-size:13px;color:#0a6ea0;text-decoration:none;padding:6px 0;border-bottom:1px solid var(--line)}
+  .ev small{color:var(--mute);display:block}
+  /* whatsapp */
+  .wa{background:#e5ddd5;border-radius:16px;padding:12px;margin-bottom:14px}
+  .wa-h{font-size:12px;color:#4a5a50;margin-bottom:8px;font-weight:700}
+  .bub{background:#dcf8c6;border-radius:4px 12px 12px 12px;padding:9px 11px;margin-bottom:7px;font-size:14px;line-height:1.38;box-shadow:0 1px 1px rgba(0,0,0,.1)}
+  .bub::before{content:"💡 ";}
+  .nudge{display:flex;gap:11px;align-items:center;border:1.5px dashed var(--cyan);border-radius:12px;padding:11px;margin-bottom:8px;background:#f4fbff}
+  .nudge .ic{font-size:26px}
+  .nudge b{font-size:14px} .nudge p{margin:2px 0 0;font-size:12.5px;color:var(--mute)}
+  .nudge button{margin-left:auto;border:0;background:var(--navy);color:#fff;padding:8px 11px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .row:last-child{border:0} .row small{display:block;color:var(--mute);font-size:12px}
+  .star{color:#f5a623;font-weight:700}
+  .bar{height:8px;background:#e8eef7;border-radius:9px;overflow:hidden;margin-top:4px}
+  .bar i{display:block;height:100%;background:var(--bad);border-radius:9px}
+  .trust-line{display:flex;gap:14px;align-items:center}
+  .plan li{font-size:13.5px;margin:5px 0}
+  .foot{text-align:center;font-size:11.5px;color:var(--mute);padding:6px 0 24px}
+  .err{background:#fdecea;color:#a1271c;padding:11px;border-radius:10px;font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="phone">
+  <header>
+    <span class="badge" id="mode">…</span>
+    <div class="logo">pay<b>tm</b> <span style="font-weight:600;font-size:15px">Trust & Growth</span></div>
+    <div class="sub">One trust engine: safer payments for customers, more business for merchants</div>
+  </header>
+  <div class="tabs">
+    <button class="tab on" data-t="pay">🛡️ Pay Safely</button>
+    <button class="tab" data-t="grow">📈 Grow My Business</button>
+  </div>
+
+  <main>
+  <!-- ===================== CUSTOMER ===================== -->
+  <section id="pay">
+    <div class="card">
+      <h3>Check before you pay</h3>
+      <label>UPI ID, website link, shop name, or a suspicious message</label>
+      <input id="q" placeholder="e.g. kbc-winner-claim@okaxis" autocomplete="off">
+      <div class="chips">
+        <button class="chip" data-q="kbc-winner-claim@okaxis">Fake lottery UPI</button>
+        <button class="chip" data-q="https://free-kyc-refund.in/claim">Fake KYC link</button>
+        <button class="chip" data-q="sharma.sweets@paytm">Known shop UPI</button>
+        <button class="chip" data-q="unknownguy123@ybl">Brand-new UPI</button>
+      </div>
+      <button class="btn" id="checkBtn">Check safety</button>
+    </div>
+    <div id="payOut"></div>
+  </section>
+
+  <!-- ===================== MERCHANT ===================== -->
+  <section id="grow" class="hide">
+    <div class="card">
+      <h3>Your weekly growth tips</h3>
+      <label>Business name</label><input id="bn" value="Sharma Sweets">
+      <label>What do you sell? (category)</label><input id="bc" value="sweet shop">
+      <label>Area / city</label><input id="bl" value="Andheri, Mumbai">
+      <button class="btn navy" id="growBtn">Get this week's tips</button>
+    </div>
+    <div id="growOut"></div>
+  </section>
+  </main>
+  <div class="foot">Powered by SerpApi (Google Search, News, Maps, Reviews, Trends, Extract)<br>
+  An extra safety layer — never share your OTP or UPI PIN with anyone.</div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const safeLink=u=>/^https?:\/\//i.test(u)?u:"#";
+
+fetch("/api/health").then(r=>r.json()).then(h=>{
+  const b=$("#mode"); b.textContent=h.mode==="live"?"● LIVE data":"DEMO data"; if(h.mode==="live")b.classList.add("live");
+}).catch(()=>{$("#mode").textContent="offline"});
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
+  $("#pay").classList.toggle("hide",t.dataset.t!=="pay");
+  $("#grow").classList.toggle("hide",t.dataset.t!=="grow");
+});
+document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{$("#q").value=c.dataset.q;check();});
+$("#checkBtn").onclick=()=>check(); $("#q").onkeydown=e=>{if(e.key==="Enter")check()};
+$("#growBtn").onclick=grow;
+
+const spin=t=>`<div class="spin"><i></i>${t}</div>`;
+async function post(url,body){
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(!r.ok){let m="Something went wrong";try{m=(await r.json()).detail||m}catch{} throw new Error(m)}
+  return r.json();
+}
+
+function gauge(score,color){
+  const r=46,c=2*Math.PI*r,off=c*(1-score/100);
+  return `<svg class="gauge" viewBox="0 0 110 110"><circle cx="55" cy="55" r="${r}" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="10"/>
+  <circle cx="55" cy="55" r="${r}" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 55 55)"/>
+  <text x="55" y="53" text-anchor="middle" fill="#fff" font-size="28" font-weight="800">${score}</text>
+  <text x="55" y="72" text-anchor="middle" fill="#fff" font-size="11" opacity=".9">Trust Score</text></svg>`;
+}
+
+async function report(q){
+  try{const r=await post("/api/report",{query:q,reason:"Reported from app"}); await check(r.message);}
+  catch(e){alert(e.message)}
+}
+
+async function check(note){
+  const q=$("#q").value.trim(); if(!q)return;
+  const out=$("#payOut"); $("#checkBtn").disabled=true;
+  out.innerHTML=spin("Searching Google, news &amp; reading the page…");
+  try{
+    const r=await post("/api/check",{query:q});
+    const ic={bad:"!",good:"✓",info:"i"};
+    out.innerHTML=`
+      <div class="verdict ${r.verdict}">${gauge(r.trust)}<div class="big">${esc(r.headline)}</div>
+        <div class="sm">${esc(r.summary)}</div></div>
+      <div class="card"><h3>Why we say this</h3>
+        ${r.reasons.map(x=>`<div class="reason"><span class="dot ${x.type}">${ic[x.type]}</span><span>${esc(x.text)}</span></div>`).join("")}
+      </div>
+      ${r.evidence.length?`<div class="card"><h3>Evidence</h3>${r.evidence.map(e=>
+        `<a class="ev" target="_blank" rel="noopener noreferrer" href="${esc(safeLink(e.link))}">${esc(e.title)}<small>${e.tag}${e.credible?" · credible source":""}</small></a>`).join("")}</div>`:""}
+      ${r.verdict==="risky"
+        ?`<button class="btn" style="background:var(--bad)" onclick="alert('Payment cancelled. Thanks for staying safe!')">Cancel payment</button>`
+        :`<button class="btn navy" onclick="alert('Proceeding to Paytm payment (demo)')">Continue to pay</button>`}
+      <button class="btn ghost" id="repBtn">🚩 Report this as a scam</button>`;
+    $("#repBtn").onclick=()=>report(q);
+    if(note)out.insertAdjacentHTML("afterbegin",`<div class="card" style="background:#e8f7ef;color:#116a3d;font-weight:600;font-size:14px">${esc(note)}</div>`);
+  }catch(e){out.innerHTML=`<div class="err">${esc(e.message)}</div>`}
+  $("#checkBtn").disabled=false;
+}
+
+function spark(v){
+  if(!v||v.length<2)return"";
+  const w=360,h=70,mx=Math.max(...v),mn=Math.min(...v),sp=(mx-mn)||1;
+  const pts=v.map((y,i)=>`${(i/(v.length-1)*w).toFixed(1)},${(h-6-(y-mn)/sp*(h-14)).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="70"><polyline points="${pts}" fill="none" stroke="#00baf2" stroke-width="3" stroke-linejoin="round"/></svg>`;
+}
+
+async function grow(){
+  const body={business_name:$("#bn").value,category:$("#bc").value,location:$("#bl").value};
+  const out=$("#growOut"); $("#growBtn").disabled=true;
+  out.innerHTML=spin("Scanning nearby shops, reviews &amp; demand trends…");
+  try{
+    const r=await post("/api/copilot",body);
+    const t=r.trust, cls=t.verdict;
+    const maxg=Math.max(1,...r.gaps.map(g=>g.count));
+    out.innerHTML=`
+      <div class="verdict ${cls}">${gauge(t.trust)}<div class="big">Your Trust Score: ${t.trust}/100</div>
+        <div class="sm">${t.own_found?`Customers checking you see: “${esc(t.headline)}”`:"We couldn't find you on Google Maps yet"}</div></div>
+
+      ${r.history&&r.history.length>1?`<div class="card"><h3>Your Trust Score over time</h3>${spark(r.history.map(h=>h.trust))}
+        <div style="font-size:13px;color:var(--mute)">${r.history[0].trust} → <b style="color:var(--ok)">${r.history[r.history.length-1].trust}</b> across ${r.history.length} checks</div></div>`:""}
+
+      <div class="wa"><div class="wa-h">💬 WhatsApp · Paytm for Business · this week</div>
+        ${r.tips.map(x=>`<div class="bub">${esc(x)}</div>`).join("")}</div>
+
+      <div class="card"><h3>Paytm can help you act on this</h3>
+        ${r.nudges.map(n=>`<div class="nudge"><span class="ic">${n.icon}</span><div><b>${esc(n.title)}</b><p>${esc(n.body)}</p></div>
+          <button onclick="alert('${esc(n.title).replace(/'/g,"")} (demo)')">${esc(n.cta)}</button></div>`).join("")}</div>
+
+      <div class="card"><h3>Demand: “${esc(r.trend.keyword)}” searches (3 months)</h3>${spark(r.trend.values)}
+        <div style="font-size:13px;color:var(--mute)">Last 4 weeks: <b style="color:${r.trend.change_pct>=0?"var(--ok)":"var(--bad)"}">${r.trend.change_pct>=0?"▲":"▼"} ${Math.abs(r.trend.change_pct)}%</b>
+        · Next: ${esc(r.festival.name)} in ${r.festival.days} days</div></div>
+
+      ${r.gaps.length?`<div class="card"><h3>What customers complain about at rivals</h3>
+        ${r.gaps.map(g=>`<div style="font-size:14px;margin-bottom:9px">${esc(g.theme)} <b>(${g.count})</b>
+          <div class="bar"><i style="width:${g.count/maxg*100}%"></i></div></div>`).join("")}</div>`:""}
+
+      <div class="card"><h3>Nearby competitors${r.avg_rating?` · avg ${r.avg_rating}★`:""}</h3>
+        ${r.competitors.map(c=>`<div class="row"><div>${esc(c.title)}<small>${esc(c.hours)} · ${esc(c.address)}</small></div>
+          <div class="star">${c.rating}★<small>${c.reviews} reviews</small></div></div>`).join("")}</div>
+
+      <div class="card"><h3>How to raise your Trust Score</h3><ul class="plan" style="padding-left:18px;margin:0">
+        ${t.plan.map(p=>`<li>${esc(p)}</li>`).join("")}</ul></div>`;
+  }catch(e){out.innerHTML=`<div class="err">${esc(e.message)}</div>`}
+  $("#growBtn").disabled=false;
+}
+</script>
+</body>
+</html>

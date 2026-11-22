@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: paytm-trust-growth
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: SERPAPI_KEY
+        sync: false          # paste in Render dashboard, never commit
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DEMO_REPEAT
+        value: "1"           # lets you repeat 'Report' during the demo; remove for real use

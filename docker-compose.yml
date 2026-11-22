@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    environment:
+      DEMO_REPEAT: "1"
+      DB_PATH: /data/data.db
+    volumes: ["appdata:/data"]
+volumes:
+  appdata:
