@@ -67,7 +67,7 @@ Customers see a merchant's Trust Score before paying. Merchants see how to impro
 - **Frontend:** single-page HTML/CSS/JS, mobile-first Paytm-style UI
 - **Database:** SQLite (scam reports, merchant score history)
 - **Data:** SerpApi, with 24-hour on-disk caching to save credits
-- **AI (optional):** OpenAI or Claude, for friendlier wording of summaries and tips
+- **AI (optional):** OpenAI only (`LLM_PROVIDER=openai`), for friendlier wording of summaries and tips
 - **Deploy:** Docker, Render
 
 ---
@@ -83,7 +83,7 @@ paytm-trust-growth/
 │   ├── checker.py    # Customer flow
 │   ├── copilot.py    # Merchant flow
 │   ├── db.py         # SQLite: reports + score history (seeded)
-│   └── ai.py         # Optional LLM wording layer (OpenAI or Claude)
+│   └── ai.py         # Optional OpenAI wording layer (LLM_PROVIDER=openai)
 ├── static/index.html # UI
 ├── Dockerfile
 ├── docker-compose.yml
@@ -109,7 +109,9 @@ Open `.env` and add your key:
 
 ```
 SERPAPI_KEY=your_serpapi_key
-OPENAI_API_KEY=             # optional LLM (or ANTHROPIC_API_KEY)
+LLM_PROVIDER=off            # set to openai to enable LLM summaries/tips
+OPENAI_API_KEY=             # required when LLM_PROVIDER=openai
+OPENAI_MODEL=gpt-4o-mini    # optional
 ```
 
 Start the server:

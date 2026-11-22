@@ -7,10 +7,16 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
+import logging_config  # noqa: E402
+
+logging_config.setup()
+
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
+
+import logging
 
 import ai  # noqa: E402
 import checker  # noqa: E402
@@ -18,8 +24,14 @@ import copilot  # noqa: E402
 import db  # noqa: E402
 from serp import serp  # noqa: E402
 
+log = logging.getLogger("app")
+
 app = FastAPI(title="Paytm Trust & Growth")
 db.init()
+info = ai.model_info()
+log.info("startup serp=%s llm=%s", "mock" if serp.mock else "live", info["provider"] or "off")
+if info["provider"]:
+    log.info("startup llm model=%s", info["model"])
 STATIC = os.path.join(os.path.dirname(__file__), "..", "static")
 
 
@@ -40,7 +52,12 @@ class CopilotReq(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"mode": "mock" if serp.mock else "live", "claude": ai.enabled(), "serpapi_calls_this_run": serp.calls, "demo_repeat": db.DEMO_REPEAT}
+    return {
+        "mode": "mock" if serp.mock else "live",
+        "llm": ai.model_info(),
+        "serpapi_calls_this_run": serp.calls,
+        "demo_repeat": db.DEMO_REPEAT,
+    }
 
 
 @app.post("/api/check")

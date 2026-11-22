@@ -6,12 +6,16 @@
 """
 import hashlib
 import json
+import logging
 import os
 import random
+import shlex
 import threading
 import time
 
 import requests
+
+log = logging.getLogger("serp")
 
 BASE = "https://serpapi.com/search.json"
 CACHE_FILE = os.path.join(os.path.dirname(__file__), ".cache.json")
@@ -20,6 +24,64 @@ CACHE_TTL = 24 * 3600
 SCAM_HINTS = ["lottery", "kbc", "prize", "winner", "reward", "refund", "kyc", "freegift",
               "free-gift", "quickcash", "fastloan", "loan-fast", "fake", "claim", "jackpot",
               "earnmoney", "double", "cashback-claim"]
+
+
+def _query_label(params):
+    return (params.get("q") or params.get("url") or params.get("data_id") or "")[:100]
+
+
+def _result_n(engine, data):
+    if not isinstance(data, dict):
+        return 0
+    for key in ("organic_results", "news_results", "local_results", "reviews"):
+        if data.get(key):
+            return len(data[key])
+    if data.get("place_results"):
+        return 1
+    tl = (data.get("interest_over_time") or {}).get("timeline_data") or []
+    if tl:
+        return len(tl)
+    md = data.get("markdown") or data.get("markdown_content") or ""
+    if md:
+        return len(md)
+    return 0
+
+
+def _curl_line(params):
+    """Copy-pasteable SerpApi request (api_key redacted)."""
+    parts = ["curl", "-sG", shlex.quote(BASE)]
+    for k, v in sorted(params.items()):
+        val = "***" if k == "api_key" else str(v)
+        parts.append(f"--data-urlencode {shlex.quote(f'{k}={val}')}")
+    return " ".join(parts)
+
+
+def _response_preview(engine, data, max_items=3):
+    """Short JSON-ish preview for logs."""
+    if not isinstance(data, dict):
+        return []
+    if engine == "google":
+        return [{"title": (x.get("title") or "")[:90], "link": (x.get("link") or "")[:80]}
+                for x in (data.get("organic_results") or [])[:max_items]]
+    if engine == "google_news":
+        return [{"title": (x.get("title") or "")[:90], "source": x.get("source")}
+                for x in (data.get("news_results") or [])[:max_items]]
+    if engine == "google_maps":
+        raw = data.get("local_results") or ([data["place_results"]] if data.get("place_results") else [])
+        return [{"title": x.get("title"), "rating": x.get("rating"), "reviews": x.get("reviews")}
+                for x in raw[:max_items]]
+    if engine == "google_maps_reviews":
+        return [{"rating": x.get("rating"), "snippet": (x.get("snippet") or "")[:70]}
+                for x in (data.get("reviews") or [])[:max_items]]
+    if engine == "google_trends":
+        tl = (data.get("interest_over_time") or {}).get("timeline_data") or []
+        if tl:
+            return [{"points": len(tl), "last": tl[-1].get("date")}]
+        return []
+    if engine == "extract":
+        md = (data.get("markdown") or data.get("markdown_content") or "")[:200]
+        return [{"markdown_chars": len(md), "head": md[:120]}] if md else []
+    return [{"keys": list(data.keys())[:8]}]
 
 
 class Serp:
@@ -33,17 +95,30 @@ class Serp:
                 self.cache = json.load(f)
         except Exception:
             self.cache = {}
+        log.info("serp mode=%s cache_entries=%d", "mock" if self.mock else "live", len(self.cache))
 
     # ------------------------------------------------------------------ core
     def _get(self, **params):
+        engine = params.get("engine", "?")
+        q = _query_label(params)
         ck = hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
         hit = self.cache.get(ck)
         if hit and time.time() - hit["t"] < CACHE_TTL:
+            n = _result_n(engine, hit["d"])
+            prev = _response_preview(engine, hit["d"])
+            log.info("serp data_source=cache engine=%s n=%d q=%r preview=%s", engine, n, q, prev)
             return hit["d"]
         params["api_key"] = self.key
+        log.info("serp data_source=http engine=%s q=%r", engine, q)
+        log.info("serp curl: %s", _curl_line(params))
         r = requests.get(BASE, params=params, timeout=45)
         r.raise_for_status()
         data = r.json()
+        n = _result_n(engine, data)
+        prev = _response_preview(engine, data)
+        log.info("serp response engine=%s n=%d preview=%s", engine, n, prev)
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug("serp response_body=%s", json.dumps(data, default=str)[:8000])
         with self._lock:
             self.calls += 1
             self.cache[ck] = {"t": time.time(), "d": data}
@@ -54,11 +129,31 @@ class Serp:
                 pass
         return data
 
+    def _mock_log(self, op, q, rows):
+        q = (q if isinstance(q, str) else str(q))[:100]
+        if isinstance(rows, list):
+            n = len(rows)
+            if rows and isinstance(rows[0], dict):
+                prev = [{k: (str(v)[:70] if v is not None else "") for k, v in list(r.items())[:3]}
+                        for r in rows[:3]]
+            elif rows and isinstance(rows[0], (int, float)):
+                n, prev = len(rows), [{"trend_points": n, "last3": rows[-3:]}]
+            else:
+                prev = [(rows[:120] + "…") if isinstance(rows, str) and len(rows) > 120 else rows]
+        elif isinstance(rows, str):
+            n = len(rows)
+            prev = [{"text_len": n, "head": rows[:120]}]
+        else:
+            n, prev = 0, []
+        log.info("serp data_source=mock op=%s n=%d q=%r preview=%s", op, n, q, prev)
+
     # ------------------------------------------------------------ public API
     def search(self, q, num=10):
         """Google Search -> [{title, snippet, link, source}]"""
         if self.mock:
-            return _mock_search(q)
+            out = _mock_search(q)
+            self._mock_log("search", q, out)
+            return out
         d = self._get(engine="google", q=q, gl="in", hl="en", num=num)
         return [{"title": x.get("title", ""), "snippet": x.get("snippet", ""),
                  "link": x.get("link", ""), "source": x.get("displayed_link", "")}
@@ -67,7 +162,9 @@ class Serp:
     def news(self, q):
         """Google News -> [{title, link, source, date}]"""
         if self.mock:
-            return _mock_news(q)
+            out = _mock_news(q)
+            self._mock_log("news", q, out)
+            return out
         d = self._get(engine="google_news", q=q, gl="in", hl="en")
         out = []
         for x in d.get("news_results", []):
@@ -80,7 +177,9 @@ class Serp:
     def maps(self, q):
         """Google Maps -> [{title, rating, reviews, address, hours, data_id, type}]"""
         if self.mock:
-            return _mock_maps(q)
+            out = _mock_maps(q)
+            self._mock_log("maps", q, out)
+            return out
         d = self._get(engine="google_maps", type="search", q=q, hl="en", gl="in")
         out = []
         for x in d.get("local_results", []) or ([d["place_results"]] if d.get("place_results") else []):
@@ -93,7 +192,9 @@ class Serp:
     def reviews(self, data_id, title=""):
         """Google Maps Reviews -> [{rating, snippet}]"""
         if self.mock:
-            return _mock_reviews(title or data_id)
+            out = _mock_reviews(title or data_id)
+            self._mock_log("reviews", title or data_id, out)
+            return out
         d = self._get(engine="google_maps_reviews", data_id=data_id, hl="en", sort_by="ratingLow")
         return [{"rating": x.get("rating"), "snippet": (x.get("snippet") or x.get("extracted_snippet", {}).get("original", "") or "")}
                 for x in d.get("reviews", [])]
@@ -101,7 +202,9 @@ class Serp:
     def trends(self, q):
         """Google Trends interest over time (India, last 3 months) -> [int]"""
         if self.mock:
-            return _mock_trends(q)
+            out = _mock_trends(q)
+            self._mock_log("trends", q, out)
+            return out
         d = self._get(engine="google_trends", q=q, geo="IN", data_type="TIMESERIES", date="today 3-m")
         vals = []
         for p in d.get("interest_over_time", {}).get("timeline_data", []):
@@ -114,7 +217,9 @@ class Serp:
     def extract(self, url):
         """SerpApi Extract API -> page text as Markdown (truncated)"""
         if self.mock:
-            return _mock_extract(url)
+            out = _mock_extract(url)
+            self._mock_log("extract", url, out)
+            return out
         d = self._get(engine="extract", url=url)
         text = d.get("markdown") or d.get("markdown_content") or ""
         if not text:  # fall back to whatever readable fields exist

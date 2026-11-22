@@ -1,4 +1,5 @@
 """Merchant side: 'Grow My Business' - Merchant Growth Copilot for Paytm for Business."""
+import logging
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +9,8 @@ import ai
 import db
 import trust
 from serp import serp
+
+log = logging.getLogger("copilot")
 
 THEMES = {
     "delivery":  (r"deliver|late by|delay|waited .{0,12}(hour|min)", "delivery speed",
@@ -170,6 +173,11 @@ def run(business, category, location):
         plan.append(f"Reply to and fix complaints about {THEMES[own_themes.most_common(1)[0][0]][1]}")
     plan.append("Keep a visible Paytm QR so customers see a verified payment identity")
 
+    log.info(
+        "copilot serp=%s trust=%s competitors=%d tips=%d llm=%s errors=%d",
+        "mock" if serp.mock else "live", t["trust"], len(comps), len(tips),
+        "yes" if ai_tips else "no", len(errors),
+    )
     return {
         "business": business, "category": category, "location": location,
         "mode": "mock" if serp.mock else "live", "ai_polished": bool(ai_tips),

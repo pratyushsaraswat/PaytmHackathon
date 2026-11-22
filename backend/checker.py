@@ -1,8 +1,11 @@
 """Customer side: 'Pay Safely' - check a UPI ID / link / merchant name / offer message BEFORE paying."""
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 
 import ai
+
+log = logging.getLogger("checker")
 import db
 import trust
 from serp import serp
@@ -90,6 +93,13 @@ def check(query):
                 "sources_used": sorted(k for k in res), "errors": errors})
     ai_text = ai.explain_check(q, out)
     out["summary"] = ai_text or _fallback_summary(out)
+    log.info(
+        "check kind=%s trust=%s verdict=%s data: serp=%s search=%d news=%d "
+        "sqlite_reports=%d summary_from=%s errors=%d",
+        kind, out["trust"], out["verdict"], "mock" if serp.mock else "live",
+        len(search_results), len(news), reports,
+        "openai" if ai_text else "rule_based", len(errors),
+    )
     return out
 
 
